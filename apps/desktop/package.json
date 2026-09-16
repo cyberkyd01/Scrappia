@@ -1,0 +1,17 @@
+{
+  "name": "@scrappia/desktop",
+  "version": "0.1.0",
+  "description": "Scrappia desktop app: visual recorder, run monitor, exports, scheduler.",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "package": "electron-vite build && electron-builder",
+    "test": "vitest run"
+  },
+  "productName": "Scrappia"
+}

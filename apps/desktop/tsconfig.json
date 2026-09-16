@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "verbatimModuleSyntax": false,
+    "types": ["node", "electron-vite/node"],
+    "paths": {
+      "@scrappia/core": ["packages/core/src/index.ts"],
+      "@scrappia/inspector": ["packages/inspector/src/index.ts"],
+      "@scrappia/mcp": ["packages/mcp/src/index.ts"],
+      "@shared/*": ["apps/desktop/src/shared/*"]
+    }
+  },
+  "include": ["src", "electron.vite.config.ts"]
+}

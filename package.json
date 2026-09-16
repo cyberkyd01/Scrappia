@@ -1,0 +1,72 @@
+{
+  "name": "scrappia",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Production-grade visual web scraper: desktop recorder, headless engine, CLI, REST API and MCP server.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "postinstall": "node scripts/link-packages.mjs",
+    "link": "node scripts/link-packages.mjs",
+    "build": "node scripts/run-all.mjs build",
+    "test": "node scripts/run-all.mjs test",
+    "typecheck": "node scripts/run-all.mjs typecheck",
+    "dev:desktop": "npm run dev --prefix apps/desktop",
+    "dev:server": "npm run dev --prefix apps/server",
+    "scrappia": "node apps/cli/dist/index.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0",
+    "tsx": "^4.20.0",
+    "esbuild": "^0.25.0",
+    "@types/jsdom": "^21.1.7",
+    "@types/papaparse": "^5.3.16",
+    "@types/turndown": "^5.0.5",
+    "@types/pg": "^8.15.0",
+    "electron": "^44.0.0",
+    "electron-vite": "^5.0.0",
+    "electron-builder": "^26.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "vite": "^7.0.0",
+    "eslint": "^9.30.0",
+    "@eslint/js": "^9.30.0",
+    "typescript-eslint": "^8.35.0"
+  },
+  "dependencies": {
+    "zod": "^3.25.0",
+    "patchright": "^1.63.0",
+    "jsdom": "^30.0.0",
+    "croner": "^10.0.0",
+    "exceljs": "^4.4.0",
+    "papaparse": "^5.7.0",
+    "@mozilla/readability": "^0.6.0",
+    "turndown": "^7.2.0",
+    "@anthropic-ai/sdk": "^0.126.0",
+    "robots-parser": "^3.0.1",
+    "proxy-chain": "^3.0.0",
+    "microdiff": "^1.6.0",
+    "undici": "^8.10.0",
+    "nanoid": "^6.0.0",
+    "@medv/finder": "^4.0.0",
+    "css-selector-generator": "^3.9.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "commander": "^15.0.0",
+    "hono": "^4.13.0",
+    "@hono/node-server": "^2.1.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "optionalDependencies": {
+    "pg": "^8.23.0",
+    "mysql2": "^3.24.0",
+    "mongodb": "^7.6.0",
+    "hyparquet-writer": "^0.16.0"
+  }
+}

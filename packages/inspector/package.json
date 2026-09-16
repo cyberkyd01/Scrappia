@@ -1,0 +1,24 @@
+{
+  "name": "@scrappia/inspector",
+  "version": "0.1.0",
+  "description": "In-page overlay injected into the scraping browser: hover/click capture, selector generation, list detection.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./bundle": "./dist/inspector.iife.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && esbuild src/inject/main.ts --bundle --format=iife --global-name=__scrappiaInspector --target=es2020 --outfile=dist/inspector.iife.js --minify",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  }
+}

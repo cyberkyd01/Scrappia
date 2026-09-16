@@ -1,0 +1,50 @@
+appId: com.scrappia.desktop
+productName: Scrappia
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - package.json
+  - "!**/*.map"
+  # dependencies live in the monorepo root node_modules (no workspaces / symlinks on exFAT)
+  - from: ../../node_modules
+    to: node_modules
+    filter:
+      - "**/*"
+      - "!.cache/**"
+      - "!electron/**"
+      - "!electron-builder/**"
+      - "!electron-vite/**"
+      - "!vite/**"
+      - "!vitest/**"
+      - "!typescript/**"
+      - "!esbuild/**"
+      - "!@esbuild/**"
+      - "!eslint/**"
+      - "!@eslint/**"
+      - "!typescript-eslint/**"
+      - "!@types/**"
+      - "!**/*.map"
+  - from: ../../packages/core/dist
+    to: packages/core/dist
+  - from: ../../packages/inspector/dist
+    to: packages/inspector/dist
+asar: false
+win:
+  target:
+    - nsis
+    - portable
+  artifactName: ${productName}-${version}-${arch}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+mac:
+  target:
+    - dmg
+  category: public.app-category.developer-tools
+linux:
+  target:
+    - AppImage
+  category: Utility

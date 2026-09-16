@@ -1,0 +1,11 @@
+node_modules/
+dist/
+out/
+*.log
+.env
+.env.*
+!.env.example
+.scrappia/
+coverage/
+*.tsbuildinfo
+apps/desktop/release/

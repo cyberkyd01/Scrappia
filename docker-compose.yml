@@ -1,0 +1,25 @@
+services:
+  scrappia:
+    build: .
+    image: scrappia-server
+    container_name: scrappia
+    restart: unless-stopped
+    ports:
+      - "8788:8788"
+    environment:
+      # Bootstrap key: accepted only until you create a real key with POST /api/api-keys.
+      SCRAPPIA_API_KEY: ${SCRAPPIA_API_KEY:-change-me}
+      SCRAPPIA_HOME: /data
+      SCRAPPIA_LOG_JSON: "1"
+      SCRAPPIA_LOG_LEVEL: ${SCRAPPIA_LOG_LEVEL:-info}
+      # SCRAPPIA_CORS: "https://app.example.com"
+      # SCRAPPIA_RATE_LIMIT: "600"
+      # ANTHROPIC_API_KEY / OPENAI_API_KEY / OLLAMA_HOST enable the AI endpoints.
+    volumes:
+      - scrappia-data:/data
+    # Chromium needs a larger shared memory segment than Docker's 64MB default.
+    shm_size: "1gb"
+    init: true
+
+volumes:
+  scrappia-data:
