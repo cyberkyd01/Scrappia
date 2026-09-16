@@ -4,6 +4,9 @@
 
 | Area | Evidence |
 |---|---|
+| Copilot (core) | 9 tests with a scripted OpenAI-compatible mock server: autonomous flow (detect -> set_list -> fix empty field -> pagination -> detail follow -> output/engine config -> export -> test_run -> save -> start_run, full run succeeds with merged detail fields); interactive flow (enable picking -> picked event -> fields -> next-page pick -> pagination); error recovery and round limits; every tool exercised across engine/output/monitor/schedule/ai/sinks/keywords/actions/templates; invalid changes rejected; browser-mode vs HTTP-mode test runs; picking refused cleanly without a browser |
+| Copilot (desktop) | 5 unit tests + end-to-end script `apps/desktop/scripts/e2e-copilot.mjs`: built Electron app driven over CDP with the mock model; real mouse click in the recorder Chromium turns into a list with fields; pagination via chat; "run it" runs 25 rows across 3 pages and switches to the Run monitor; history and recipe restored on return; no-provider empty state |
+| Copilot (server, MCP) | 9 server tests (sessions, turns, SSE streaming, expiry, key scoping, caps, 400 without provider) and 5 MCP tests (`copilot_start`/`copilot_turn`/`copilot_end`) |
 | Core engine | 68 tests: schema, transforms, DOM extractor, HTTP runner (pagination, follows, categories, keywords, retries, validation, exports, robots, drift, cancel/resume, POST), browser runner (JS pages, load-more, infinite scroll, login actions, click pagination, main-world scripts, screenshots/images), AI (batching, self-healing with a fake LLM), monitor/diff/alerts (signed webhooks), scheduler, sinks, migrations |
 | Real sites | `books-toscrape` (HTTP, next links + detail merge: 20 rows / 4 pages / 3 s) and `quotes-infinite-scroll` (stealth browser: 60 rows / 6 scroll steps) |
 | Inspector overlay | 31 jsdom tests + live smoke on books.toscrape.com (20-record list detected with title/price/url/image fields, pick flow, highlight, regionHtml) |
@@ -20,8 +23,10 @@
 - Live credentials for Google Sheets, Airtable, Notion, S3, Postgres, MySQL, MongoDB sinks and for
   2Captcha / CapSolver / Anti-Captcha. The request shapes follow each vendor's public API and are
   unit-tested for error handling only.
-- Anthropic / OpenAI-compatible providers against a real endpoint (the fake provider covers the
-  contract; `scrappia ai test <name>` verifies a real one).
+- Anthropic / OpenAI-compatible providers against a real endpoint (the mock server covers the
+  protocol; `scrappia ai test <name>` verifies a real one). The Copilot's prompt quality with a
+  real model therefore has not been observed here; its tool contract, validation and safety
+  rails are what the tests prove.
 - Email alerts against a real SMTP server.
 - macOS / Linux runs (the code has no Windows-specific paths beyond the packaging config).
 

@@ -22,7 +22,7 @@ import { extractFromHtml } from './dom/jsdom.js';
 import { buildSpec } from './engine/spec.js';
 
 export interface AppSettings {
-  ai: { providers: LlmProviderConfig[]; default?: string };
+  ai: { providers: LlmProviderConfig[]; default?: string; /** standing instructions appended to the Copilot system prompt */ copilotInstructions?: string };
   defaults: { outDir?: string; headless?: boolean };
 }
 

@@ -2,16 +2,21 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   EXAMPLE_RECIPES, exampleRecipe, httpFetch, htmlToMarkdown, cleanHtml, safeParseRecipe, Scheduler, Sink as SinkSchema,
-  type ScrappiaApp, type Recipe, type RecipeInput, type RunStatus, type Sink,
+  type ScrappiaApp, type Recipe, type RecipeInput, type RunStatus, type Sink, type CopilotEvent, type CopilotTurnResult,
 } from '@scrappia/core';
 import { ok, fail, guard, asObject, parseRecipeOrFail, runSummary, selectorCandidate, truncateText } from './util.js';
+import { copilotStoreFor, startCopilotSession, type CopilotStoreOptions } from './copilot.js';
 
 export interface ToolOptions {
   /** Rows returned inline after a waited run_recipe / scrape_page (default 20). */
   rowsPreview?: number;
   /** Default wait timeout for run_recipe in seconds (default 300). */
   runTimeoutSeconds?: number;
+  /** Copilot session store tuning (idle expiry, cap). Applied when the app's store is first created. */
+  copilot?: CopilotStoreOptions;
 }
+
+const COPILOT_EVENT_TYPES = ['picked', 'list.detected', 'navigated', 'run.finished'] as const;
 
 const recipeArg = z.union([z.record(z.any()), z.string()]).describe('A Scrappia recipe: JSON object (or a JSON string). Minimal shape: { "name", "entry": { "urls": [url], "template": "main" }, "templates": { "main": { "list": { "selector": [{"value": "css"}], "fields": [{ "name", "type": "text|href|src|attr|html|email|regex", "selector": [{"value": "css"}], "attr"? }] }, "pagination"? } } }. Use get_example / validate_recipe to learn the full schema.');
 
@@ -349,6 +354,61 @@ export function registerTools(server: McpServer, app: ScrappiaApp, opts: ToolOpt
     const rec = app.storage.upsertSchedule({ id: existing?.id, recipeId, cron: expr, tz: tz ?? existing?.tz, enabled, skipIfRunning });
     app.scheduler.reload();
     return ok({ schedule: { id: rec.id, recipeId, cron: expr, tz: rec.tz ?? null, enabled }, nextRuns: next.map((d) => d.toISOString()) });
+  }));
+
+  // ---------------- copilot ----------------
+  const copilot = copilotStoreFor(app, opts.copilot);
+  const turnView = (sessionId: string, r: CopilotTurnResult) => ({ sessionId, reply: r.reply, recipe: r.recipe, actions: r.actions, waitingForPicks: r.waitingForPicks, runId: r.runId, done: r.done, usage: r.usage });
+
+  server.registerTool('copilot_start', {
+    title: 'Start a copilot session',
+    description: 'Open a Scrappia Copilot session: a conversational scraper builder that inspects the page, writes the recipe (list, fields, pagination, detail pages, exports), verifies it with previews and test runs, and starts the run for you. Give a url (a blank recipe is created) or an existing recipe to continue. Then call copilot_turn with what you want in plain language. Needs an AI provider. No browser here: element picking is unavailable, everything else works.',
+    inputSchema: {
+      url: z.string().url().optional().describe('page to start from (listing page)'),
+      recipe: recipeArg.optional().describe('existing recipe to continue working on'),
+      provider: z.string().optional().describe('AI provider name from settings (default: the default provider)'),
+      instructions: z.string().max(8000).optional().describe('extra guidance for the copilot (preferences, constraints)'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  }, guard(async ({ url, recipe, provider, instructions }) => {
+    let parsed: Recipe | undefined;
+    if (recipe != null) { const r = parseRecipeOrFail(recipe); if ('error' in r) return r.error; parsed = r.recipe; }
+    const rec = startCopilotSession(app, copilot, { url, recipe: parsed, provider, instructions });
+    return ok({ sessionId: rec.id, provider: rec.provider, recipe: rec.recipe, hint: 'Call copilot_turn(sessionId, message) with the goal, e.g. "scrape all products with name, price and link, all pages, export to xlsx, then run".' });
+  }));
+
+  server.registerTool('copilot_turn', {
+    title: 'Talk to the copilot',
+    description: 'Send a message (or a client event) to a copilot session. The copilot may run many of its own tools in one turn (detect_lists, set_list, preview, set_pagination, add_follow, add_sink, test_run, start_run...); `actions` lists what it did and whether each step succeeded, `recipe` is the updated working recipe, `runId` is set when a full run was started (then use get_run / get_rows), `done` when it considers the job complete. Pass `recipe` to replace the working recipe before the turn.',
+    inputSchema: {
+      sessionId: z.string().describe('from copilot_start'),
+      message: z.string().max(20_000).optional().describe('what the user wants, or the answer to the copilot question'),
+      event: z.object({ type: z.enum(COPILOT_EVENT_TYPES) }).passthrough().optional().describe('client-side event (picked, list.detected, navigated, run.finished)'),
+      recipe: recipeArg.optional().describe('replace the working recipe first'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  }, guard(async ({ sessionId, message, event, recipe }) => {
+    const s = copilot.get(sessionId);
+    if (!s) return fail(`copilot session "${sessionId}" not found (expired or ended); call copilot_start`);
+    if (!message?.trim() && !event) return fail('message or event is required');
+    let working = s.recipe;
+    if (recipe != null) { const r = parseRecipeOrFail(recipe); if ('error' in r) return r.error; working = r.recipe; }
+    const result = await s.session.turn({ message, event: event as CopilotEvent | undefined, recipe: working });
+    s.recipe = result.recipe;
+    copilot.touch(s);
+    return ok(turnView(sessionId, result));
+  }));
+
+  server.registerTool('copilot_end', {
+    title: 'End a copilot session',
+    description: 'Close a copilot session and return its final recipe and the runs it started. Sessions also expire after 60 minutes idle.',
+    inputSchema: { sessionId: z.string() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, guard(async ({ sessionId }) => {
+    const s = copilot.get(sessionId);
+    if (!s) return fail(`copilot session "${sessionId}" not found`);
+    copilot.delete(sessionId);
+    return ok({ ended: true, sessionId, recipe: s.recipe, runIds: s.runIds });
   }));
 
   server.registerTool('list_alerts', {

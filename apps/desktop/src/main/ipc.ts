@@ -7,10 +7,12 @@ import { spawn } from 'node:child_process';
 import { ScrappiaApp, Scheduler, createProvider, EXAMPLE_RECIPES, parseRecipe, type Recipe, type RecipeInput } from '@scrappia/core';
 import type { IpcApi, IpcEvents, RecipeSummary } from '../shared/ipc';
 import type { RecorderSession } from './recorder';
+import type { CopilotManager } from './copilot';
 
 export interface IpcContext {
   app: ScrappiaApp;
   recorder: RecorderSession;
+  copilot: CopilotManager;
   window: () => BrowserWindow | undefined;
   profilesDir: string;
 }
@@ -25,7 +27,7 @@ function handle<K extends keyof IpcApi>(channel: K, fn: (...args: Parameters<Ipc
 }
 
 export function registerIpc(ctx: IpcContext) {
-  const { app: core, recorder } = ctx;
+  const { app: core, recorder, copilot } = ctx;
 
   // ---- app ----
   handle('app.info', () => ({
@@ -164,4 +166,12 @@ export function registerIpc(ctx: IpcContext) {
   handle('recorder.extractPreview', (template) => recorder.extractPreview(template));
   handle('recorder.screenshot', () => recorder.screenshot());
   handle('recorder.close', () => recorder.close());
+
+  // ---- copilot ----
+  handle('copilot.available', () => copilot.available());
+  handle('copilot.start', (input) => copilot.start(input));
+  handle('copilot.turn', (input) => copilot.turn(input));
+  handle('copilot.history', () => copilot.history());
+  handle('copilot.reset', () => { copilot.reset(); });
+  handle('copilot.cancel', () => { copilot.cancel(); });
 }

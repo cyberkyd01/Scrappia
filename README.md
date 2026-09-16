@@ -23,6 +23,10 @@ users (and users of Octoparse, ParseHub, Browse.ai, Apify and Firecrawl) complai
 - **Typed, clean data**: transforms pipeline (regex, split, number/currency/date parsing, templates,
   maps, JS, AI), validation rules (flag, drop or fail), key-based dedupe and upsert, provenance
   columns, flat or nested JSON output.
+- **Copilot**: a chat panel in the recorder. Describe what you want and it detects the records, sets
+  the fields, adds pagination and detail pages, verifies with previews and a test run, exports and
+  runs. Or work interactively: it turns on element picking, you click, it turns your clicks into fields
+  and asks what is next. Works with Anthropic, OpenAI-compatible APIs or a local model.
 - **AI where it helps**: natural-language recipe generation from a sample page, field suggestions,
   per-field AI extraction and transforms, self-healing. Works with Anthropic (structured outputs)
   or any OpenAI-compatible endpoint including local Ollama / LM Studio, so nothing has to leave

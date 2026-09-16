@@ -14,6 +14,7 @@ import { eventRoutes } from './routes/events.js';
 import { settingsRoutes } from './routes/settings.js';
 import { alertRoutes, scheduleRoutes } from './routes/schedules.js';
 import { miscRoutes } from './routes/misc.js';
+import { copilotRoutes, type CopilotOptions } from './routes/copilot.js';
 
 export interface ServerOptions {
   /** SCRAPPIA_API_KEY: accepted while storage has no API keys. */
@@ -28,6 +29,8 @@ export interface ServerOptions {
   heartbeatMs?: number;
   /** Override peer-address lookup for the loopback fallback (tests). */
   remoteAddress?: (c: Context) => string | undefined;
+  /** Copilot session store tuning (idle expiry, per-key cap). */
+  copilot?: CopilotOptions;
 }
 
 /** Build the Hono app. Does not listen; use `@hono/node-server` (see index.ts) or `hono.request()` in tests. */
@@ -75,6 +78,7 @@ export function createServer(app: ScrappiaApp, opts: ServerOptions = {}) {
   hono.route('/api', scheduleRoutes(app));
   hono.route('/api', alertRoutes(app));
   hono.route('/api', miscRoutes(app));
+  hono.route('/api', copilotRoutes(app, opts.copilot));
 
   return hono;
 }

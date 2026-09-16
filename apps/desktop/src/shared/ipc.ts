@@ -6,8 +6,28 @@
 import type {
   Recipe, RecipeInput, RunRecord, RecipeRecord, DriftEvent, ScheduleRecord, AlertRecord, AppSettings, LlmProviderConfig,
   Sink, Action, Template, RunEvent, OverlayMessage, InspectorMode, SelectorCandidate, PickedElement, DetectedList, DiffResult,
-  DatasetStats, FieldType,
+  DatasetStats, FieldType, CopilotProgress, CopilotEvent, CopilotTurnResult, CopilotMessage,
 } from '@scrappia/core';
+
+/**
+ * App settings as stored by the desktop app. Core's `AppSettings` does not know about the copilot
+ * instructions, so the desktop extends the `ai` section (the extra key is preserved by core's kv store).
+ */
+export type DesktopSettings = AppSettings & { ai: { copilotInstructions?: string } };
+
+// ---- copilot ----
+export interface CopilotAvailable { ok: boolean; providers: string[]; default?: string; reason?: string }
+/** What the recorder/copilot is doing right now (drives the banner + typing indicator). */
+export interface CopilotStatus { started: boolean; providerName?: string; busy: boolean; waitingForPicks: boolean; mode: InspectorMode; instruction: string }
+/** One item of the raw conversation log kept in the main process (folded into chat entries by the renderer). */
+export type CopilotLogItem =
+  | { kind: 'user'; text: string; at: number }
+  | { kind: 'event'; event: CopilotEvent; at: number }
+  | { kind: 'progress'; progress: CopilotProgress; at: number }
+  | { kind: 'error'; text: string; at: number };
+export interface CopilotStartInput { recipe: Recipe | RecipeInput; providerName?: string; /** identifies the recorder session; a new key resets the conversation */ sessionKey: string }
+export interface CopilotTurnInput { recipe: Recipe | RecipeInput; message?: string; event?: CopilotEvent }
+export interface CopilotState { status: CopilotStatus; log: CopilotLogItem[]; recipe?: Recipe; history: CopilotMessage[] }
 
 export interface RecorderStatus { open: boolean; url: string; title?: string; mode: InspectorMode; overlayReady: boolean }
 
@@ -66,8 +86,8 @@ export interface IpcApi {
   'runs.export': (runId: string, sinks: Sink[]) => Promise<Array<{ type: string; rows: number; target: string; error?: string }>>;
   'runs.active': () => Promise<string[]>;
   // ---- settings / secrets / ai ----
-  'settings.get': () => Promise<AppSettings>;
-  'settings.save': (s: AppSettings) => Promise<void>;
+  'settings.get': () => Promise<DesktopSettings>;
+  'settings.save': (s: DesktopSettings) => Promise<void>;
   'secrets.list': () => Promise<string[]>;
   'secrets.set': (name: string, value: string) => Promise<void>;
   'secrets.delete': (name: string) => Promise<void>;
@@ -107,6 +127,13 @@ export interface IpcApi {
   'recorder.extractPreview': (template: Template) => Promise<PreviewResult>;
   'recorder.screenshot': () => Promise<string>;
   'recorder.close': () => Promise<void>;
+  // ---- copilot ----
+  'copilot.available': () => Promise<CopilotAvailable>;
+  'copilot.start': (input: CopilotStartInput) => Promise<CopilotState>;
+  'copilot.turn': (input: CopilotTurnInput) => Promise<CopilotTurnResult>;
+  'copilot.history': () => Promise<CopilotState>;
+  'copilot.reset': () => Promise<void>;
+  'copilot.cancel': () => Promise<void>;
 }
 
 export interface IpcEvents {
@@ -114,6 +141,11 @@ export interface IpcEvents {
   'inspector:message': OverlayMessage;
   'recorder:status': RecorderStatus;
   'browsers:output': { line: string; done?: boolean; code?: number | null };
+  'copilot:progress': CopilotProgress;
+  'copilot:log': CopilotLogItem;
+  'copilot:status': CopilotStatus;
+  'copilot:recipe': Recipe;
+  'copilot:run': { runId: string };
 }
 
 export const INVOKE_CHANNELS = [
@@ -126,9 +158,10 @@ export const INVOKE_CHANNELS = [
   'recorder.open', 'recorder.navigate', 'recorder.back', 'recorder.reload', 'recorder.status', 'recorder.setMode', 'recorder.highlight', 'recorder.clearHighlights',
   'recorder.detectLists', 'recorder.describe', 'recorder.expand', 'recorder.regionHtml', 'recorder.pageHtml', 'recorder.currentUrl', 'recorder.runActions',
   'recorder.extractPreview', 'recorder.screenshot', 'recorder.close',
+  'copilot.available', 'copilot.start', 'copilot.turn', 'copilot.history', 'copilot.reset', 'copilot.cancel',
 ] as const satisfies readonly (keyof IpcApi)[];
 
-export const EVENT_CHANNELS = ['run:event', 'inspector:message', 'recorder:status', 'browsers:output'] as const satisfies readonly (keyof IpcEvents)[];
+export const EVENT_CHANNELS = ['run:event', 'inspector:message', 'recorder:status', 'browsers:output', 'copilot:progress', 'copilot:log', 'copilot:status', 'copilot:recipe', 'copilot:run'] as const satisfies readonly (keyof IpcEvents)[];
 
 // Compile-time completeness checks: every IpcApi / IpcEvents key must be listed above.
 type MissingInvoke = Exclude<keyof IpcApi, (typeof INVOKE_CHANNELS)[number]>;

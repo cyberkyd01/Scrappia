@@ -74,6 +74,8 @@ export function uniqueTemplateName(recipe: Recipe, base: string): string {
 
 export type RecipeAction =
   | { type: 'set'; recipe: Recipe }
+  /** Replace the whole working recipe (e.g. the copilot's result after a turn). */
+  | { type: 'replaceRecipe'; recipe: Recipe }
   | { type: 'patch'; patch: Partial<Recipe> }
   | { type: 'setEntry'; patch: Partial<Recipe['entry']> }
   | { type: 'setKeywords'; keywords: Record<string, string[]>; mode?: Recipe['keywordMode'] }
@@ -139,6 +141,7 @@ function renameRefs(recipe: Recipe, from: string, to: string): Recipe {
 export function recipeReducer(recipe: Recipe, action: RecipeAction): Recipe {
   switch (action.type) {
     case 'set': return action.recipe;
+    case 'replaceRecipe': return action.recipe;
     case 'patch': return { ...recipe, ...action.patch };
     case 'setEntry': return { ...recipe, entry: { ...recipe.entry, ...action.patch } };
     case 'setKeywords': return { ...recipe, keywords: action.keywords, keywordMode: action.mode ?? recipe.keywordMode };

@@ -9,8 +9,8 @@ import { Settings } from './views/Settings';
 
 export type View =
   | { name: 'home' }
-  | { name: 'recorder'; recipeId?: string; recipe?: Recipe; url?: string; key: number }
-  | { name: 'run'; runId: string }
+  | { name: 'recorder'; recipeId?: string; recipe?: Recipe; url?: string; key: number; /** reuse this copilot conversation (kept in main) */ copilotSessionKey?: string; restoreCopilot?: boolean }
+  | { name: 'run'; runId: string; /** where "back" leads (e.g. the recorder the copilot started the run from) */ back?: View }
   | { name: 'settings' };
 
 export interface LiveRun { runId: string; status: string; stats?: RunStats; recipeName?: string; captcha?: { url: string; kind: string } }
@@ -70,8 +70,8 @@ export default function App() {
           </nav>
           <main className="main">
             {view.name === 'home' && <Home />}
-            {view.name === 'recorder' && <Recorder key={view.key} recipeId={view.recipeId} initialRecipe={view.recipe} initialUrl={view.url} />}
-            {view.name === 'run' && <RunMonitor key={view.runId} runId={view.runId} />}
+            {view.name === 'recorder' && <Recorder key={view.key} recipeId={view.recipeId} initialRecipe={view.recipe} initialUrl={view.url} copilotSessionKey={view.copilotSessionKey} restoreCopilot={view.restoreCopilot} />}
+            {view.name === 'run' && <RunMonitor key={view.runId} runId={view.runId} back={view.back} />}
             {view.name === 'settings' && <Settings />}
           </main>
         </div>

@@ -7,6 +7,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ScrappiaApp } from '@scrappia/core';
 import { RecorderSession, recorderProfilesDir } from './recorder';
+import { CopilotManager } from './copilot';
 import { registerIpc, sendEvent } from './ipc';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -15,6 +16,10 @@ const isDev = !!process.env.ELECTRON_RENDERER_URL;
 let mainWindow: BrowserWindow | undefined;
 let core: ScrappiaApp | undefined;
 let recorder: RecorderSession | undefined;
+let copilot: CopilotManager | undefined;
+
+// Test harnesses (scripts/e2e-*.mjs) isolate the app in a throw-away profile.
+if (process.env.SCRAPPIA_USER_DATA) app.setPath('userData', process.env.SCRAPPIA_USER_DATA);
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -38,13 +43,14 @@ async function bootstrap() {
   recorder = new RecorderSession({
     profilesDir,
     anchor: () => mainWindow?.getBounds(),
-    onMessage: (msg) => sendEvent(mainWindow, 'inspector:message', msg),
+    onMessage: (msg) => { sendEvent(mainWindow, 'inspector:message', msg); copilot?.onOverlayMessage(msg); },
     onStatus: (s) => sendEvent(mainWindow, 'recorder:status', s),
   });
+  copilot = new CopilotManager({ app: core, recorder, logger: core.log, send: (channel, payload) => sendEvent(mainWindow, channel, payload) });
 
-  core.on((e) => sendEvent(mainWindow, 'run:event', e));
+  core.on((e) => { sendEvent(mainWindow, 'run:event', e); copilot?.onRunEvent(e); });
 
-  registerIpc({ app: core, recorder, window: () => mainWindow, profilesDir });
+  registerIpc({ app: core, recorder, copilot, window: () => mainWindow, profilesDir });
 
   Menu.setApplicationMenu(buildMenu());
   createWindow();
@@ -76,6 +82,8 @@ function createWindow() {
   win.once('ready-to-show', () => win.show());
   win.on('closed', () => { mainWindow = undefined; });
   win.webContents.setWindowOpenHandler(({ url }) => { void shell.openExternal(url); return { action: 'deny' }; });
+  win.webContents.on('render-process-gone', (_e, d) => console.error('[scrappia] renderer gone', d.reason, d.exitCode));
+  win.webContents.on('unresponsive', () => console.error('[scrappia] renderer unresponsive'));
 
   if (isDev) void win.loadURL(process.env.ELECTRON_RENDERER_URL!);
   else void win.loadFile(join(here, '../renderer/index.html'));

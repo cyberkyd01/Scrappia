@@ -63,6 +63,8 @@ export class RecorderSession {
     const a = this.opts.anchor();
     const args = [`--window-size=${BROWSER_W},${BROWSER_H}`];
     if (a) args.push(`--window-position=${Math.max(0, a.x + a.width + 8)},${Math.max(0, a.y)}`);
+    // Test harnesses drive the recorder browser over CDP (it is a separate process, invisible through Electron's own debugging port).
+    if (process.env.SCRAPPIA_RECORDER_CDP_PORT) args.push(`--remote-debugging-port=${process.env.SCRAPPIA_RECORDER_CDP_PORT}`);
     const provider = new PlaywrightProvider('patchright');
     const handle = await provider.launch({ engine, headless: false, initScript: bundle.source, profilesDir: this.opts.profilesDir, args });
     this.handle = handle;
@@ -165,6 +167,11 @@ export class RecorderSession {
   async pageHtml(): Promise<string> {
     if (!this.isOpen) throw new Error('recorder browser is not open');
     return this.page!.content();
+  }
+
+  async pageTitle(): Promise<string> {
+    if (!this.isOpen) throw new Error('recorder browser is not open');
+    return this.page!.title();
   }
 
   // ---------- engine helpers on the live page ----------

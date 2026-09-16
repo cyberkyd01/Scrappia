@@ -59,6 +59,7 @@ is set. Without a token it should only be bound to localhost.
 | `scrape_page` | One-call extraction from a URL with `fields` (+ optional `listSelector`), no recipe authoring needed; `mode` http/browser/auto |
 | `fetch_page_markdown`, `fetch_page_html` | Look at a page as compact Markdown or cleaned HTML (`raw: true` keeps class names) |
 | `generate_recipe`, `ask_page` | LLM-backed: draft a recipe from an instruction, answer a question from page content (need an AI provider) |
+| `copilot_start`, `copilot_turn`, `copilot_end` | Scrappia Copilot (needs an AI provider): `copilot_start({ url })` then `copilot_turn({ sessionId, message })` with the goal in plain language; the copilot inspects the page, builds the recipe, verifies it (preview, test run) and starts the run. Returns `reply`, `recipe`, `actions` (each step and whether it succeeded), `runId`, `done`. Sessions are in memory, expire after 60 min idle (max 20). No browser: element picking is reported as unavailable, everything else works |
 | `export_run` | Write a run's rows to sinks (csv, xlsx, json, jsonl, xml, parquet, sqlite, postgres, mysql, mongodb, webhook, ...) |
 | `list_examples`, `get_example` | Bundled example recipes to start from |
 | `list_schedules`, `set_schedule`, `list_alerts` | Cron schedules (`set_schedule` with `enabled`/`remove`) and monitoring alerts |
@@ -70,7 +71,8 @@ message rather than protocol errors, so agents can recover.
 
 * `scrappia://recipes/{id}`: recipe JSON (listable, id completion).
 * `scrappia://runs/{id}/rows`: first 500 rows of a run as JSON Lines (listable: last 50 runs).
-* Prompt `build_scraper(url, goal?)`: guided workflow: `fetch_page_markdown` -> draft from `get_example` ->
+* Prompt `build_scraper(url, goal?)`: fastest path via `copilot_start` + `copilot_turn` ("describe what you want; the
+  copilot builds, verifies and runs"), otherwise the manual workflow: `fetch_page_markdown` -> draft from `get_example` ->
   `preview_extract` loop -> `save_recipe` -> `run_recipe` trial -> full run / `export_run` / `set_schedule`.
 
 ## Embedding

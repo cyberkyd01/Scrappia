@@ -7,6 +7,7 @@ Technical details are kept to the end of each page.
 |---|---|
 | [Getting started](getting-started.md) | Install Scrappia on your own computer and scrape your first page in 10 minutes |
 | [User guide (desktop app)](user-guide.md) | Build scrapers by clicking: lists, detail pages, next pages, logins, keywords, exports, schedules, alerts, AI |
+| [Copilot guide](copilot-guide.md) | Let the AI build and run the scraper from a sentence, or guide it step by step in chat |
 | [Hosting guide](hosting-guide.md) | Run Scrappia on a server so it works 24/7, with Docker or without, with HTTPS |
 | [Admin guide](admin-guide.md) | Manage API keys, secrets, AI providers, proxies, CAPTCHA services, backups, updates and logs |
 | [Command line guide](cli-guide.md) | Run and schedule scrapers from a terminal or a script |

@@ -4,7 +4,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 export function registerPrompts(server: McpServer) {
   server.registerPrompt('build_scraper', {
     title: 'Build a scraper for a site',
-    description: 'Step-by-step workflow for turning a URL and a goal into a saved, tested Scrappia recipe: inspect the page, iterate on selectors with preview_extract, save, then run.',
+    description: 'Turn a URL and a goal into a saved, tested Scrappia recipe: fastest via the copilot (copilot_start + copilot_turn: describe what you want; it builds, verifies and runs), or step by step with fetch_page_markdown / preview_extract / save_recipe / run_recipe.',
     argsSchema: { url: z.string().describe('page to scrape (a listing page when there are many items)'), goal: z.string().optional().describe('what data to extract, e.g. "name, price and link of every product, all pages"') },
   }, ({ url, goal }) => ({
     messages: [{
@@ -14,7 +14,9 @@ export function registerPrompts(server: McpServer) {
         text: `Build a Scrappia recipe for ${url}.
 Goal: ${goal ?? 'extract the main repeating records on the page with their most useful fields'}.
 
-Work through these steps, calling the Scrappia tools:
+Fastest path: the Scrappia Copilot. Call copilot_start({ url }) and then copilot_turn({ sessionId, message: "<goal>" }) describing what you want; the copilot inspects the page, builds the recipe, verifies it with previews and a test run, and runs it (check actions, recipe and runId in the result; answer its questions with further copilot_turn calls, then copilot_end). Use it when an AI provider is configured; fall back to the manual steps below when it is not or when you want full control.
+
+Manual workflow, calling the Scrappia tools:
 
 1. Inspect the page. Call fetch_page_markdown(url) to understand the content, then fetch_page_html(url, raw=true) when you need class names / attributes for selectors. If the Markdown shows almost no content the page is JavaScript-rendered: plan for engine.mode "browser".
 2. Draft a recipe. Start from get_example("books-toscrape") as a template. Use one template (e.g. "listing") with list.selector = the repeating record element and fields with selectors RELATIVE to the record. Field types: text, href (absolute link), src (image), attr (+attr), html, email, regex (+pattern). Add transforms such as {"type":"currency"} or {"type":"integer"} for numbers. Give each field 2-3 selector candidates when possible (most specific first) so the recipe self-heals. Set output.keys to a unique field (usually the url) so rows dedupe and diffs work. If a "next" link exists add pagination {"type":"next","selector":[{"value":"..."}]}; for "load more" buttons or infinite scroll use type "loadMore" / "scroll" (browser mode).

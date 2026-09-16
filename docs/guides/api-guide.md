@@ -124,6 +124,7 @@ removed and changed rows with before/after values.
 | `GET /api/alerts`, `POST /api/alerts/read` | Alerts |
 | `GET /api/examples`, `GET /api/sink-types` | Reference data |
 | `POST /api/ai/generate`, `POST /api/ai/ask` | AI: recipe from a sentence, question about a page |
+| `POST /api/copilot/sessions`, `GET/DELETE /api/copilot/sessions/:id`, `POST /api/copilot/sessions/:id/turn` | Copilot: conversational scraper builder (`?stream=1` streams progress as SSE) |
 
 Errors are always `{ "error": { "code": "...", "message": "..." } }` with the matching HTTP status.
 Rate limit: 600 requests per minute per key by default; `429` with `Retry-After` when exceeded.

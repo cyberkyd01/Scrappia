@@ -2,10 +2,10 @@
  * Settings: AI providers, secrets vault, defaults, browser install, about.
  */
 import { useEffect, useRef, useState } from 'react';
-import type { AppSettings, LlmProviderConfig } from '@scrappia/core';
-import type { AppInfo } from '@shared/ipc';
+import type { LlmProviderConfig } from '@scrappia/core';
+import type { AppInfo, DesktopSettings as AppSettings } from '@shared/ipc';
 import { invoke, useIpcEvent } from '../api';
-import { Btn, Input, Select, Check, FieldRow, Badge, Tabs, Empty, useToast, useAsync } from '../components/ui';
+import { Btn, Input, Select, Textarea, Check, FieldRow, Badge, Tabs, Empty, useToast, useAsync } from '../components/ui';
 
 type Tab = 'ai' | 'secrets' | 'defaults' | 'browsers' | 'about';
 
@@ -75,6 +75,14 @@ function AiProviders({ settings, secrets, onSave }: { settings: AppSettings; sec
           ))}</tbody>
         </table>
       )}
+      {providers.length > 0 && (
+        <FieldRow label="Default provider" hint="used by the copilot, AI suggest, AI fields and self-healing unless a recipe picks another one">
+          <Select value={settings.ai.default ?? providers[0]?.name ?? ''} onChange={(e) => void onSave({ ...settings, ai: { ...settings.ai, default: e.target.value } })} data-testid="settings-default-provider">
+            {providers.map((p) => <option key={p.name} value={p.name}>{p.name} ({p.model})</option>)}
+          </Select>
+        </FieldRow>
+      )}
+      <CopilotInstructions settings={settings} onSave={onSave} />
       {editing && (
         <div className="card col">
           <h3>{providers.some((x) => x.name === editing.name) ? 'Edit provider' : 'New provider'}</h3>
@@ -87,6 +95,20 @@ function AiProviders({ settings, secrets, onSave }: { settings: AppSettings; sec
           <div className="row"><Btn variant="primary" onClick={() => upsert(editing)} disabled={!editing.name || !editing.model}>Save provider</Btn><Btn onClick={() => void test(editing)}>Test</Btn><Btn variant="ghost" onClick={() => setEditing(null)}>Cancel</Btn></div>
         </div>
       )}
+    </div>
+  );
+}
+
+function CopilotInstructions({ settings, onSave }: { settings: AppSettings; onSave: (s: AppSettings) => Promise<unknown> }) {
+  const saved = settings.ai.copilotInstructions ?? '';
+  const [text, setText] = useState(saved);
+  useEffect(() => { setText(saved); }, [saved]);
+  return (
+    <div className="card col">
+      <h3>Copilot instructions</h3>
+      <div className="faint small">Extra guidance appended to the copilot's system prompt in the recorder: preferred field names, default export type, politeness ("always use a 2 s delay"), or the language to reply in.</div>
+      <Textarea full rows={4} value={text} placeholder="e.g. Always export to xlsx, name fields in snake_case, reply in German." onChange={(e) => setText(e.target.value)} data-testid="settings-copilot-instructions" />
+      <div className="row"><Btn size="sm" variant="primary" onClick={() => void onSave({ ...settings, ai: { ...settings.ai, copilotInstructions: text.trim() || undefined } })} disabled={text.trim() === saved.trim()}>Save instructions</Btn>{saved && <span className="faint tiny">applies to new copilot sessions (use Reset in the panel)</span>}</div>
     </div>
   );
 }

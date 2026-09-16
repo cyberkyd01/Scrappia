@@ -14,8 +14,11 @@ import { CapturePanel, DetectedListPicker } from '../components/recorder/Capture
 import { FieldEditor, ListEditor, ActionEditor, PaginationEditor, FollowEditor, TemplateEditor } from '../components/recorder/Editors';
 import { DataPreview } from '../components/recorder/DataPreview';
 import { RecipeSettings } from '../components/recorder/RecipeSettings';
+import { CopilotPanel } from '../components/recorder/CopilotPanel';
 
-export function Recorder({ recipeId: initialId, initialRecipe, initialUrl }: { recipeId?: string; initialRecipe?: Recipe; initialUrl?: string }) {
+const LS_COPILOT_OPEN = 'scrappia.copilot.open';
+
+export function Recorder({ recipeId: initialId, initialRecipe, initialUrl, copilotSessionKey, restoreCopilot }: { recipeId?: string; initialRecipe?: Recipe; initialUrl?: string; copilotSessionKey?: string; restoreCopilot?: boolean }) {
   const { go } = useApp();
   const toast = useToast();
   const { run, busy } = useAsync();
@@ -33,6 +36,12 @@ export function Recorder({ recipeId: initialId, initialRecipe, initialUrl }: { r
   const [saveAs, setSaveAs] = useState(false);
   const [aiSuggest, setAiSuggest] = useState<SuggestFieldsResult | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(() => { try { return localStorage.getItem(LS_COPILOT_OPEN) !== 'false'; } catch { return true; } });
+  const [copilotFocus, setCopilotFocus] = useState(0);
+  const [copilotSession] = useState(() => copilotSessionKey ?? `copilot-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`);
+  const copilotWaiting = useRef(false);
+  const recipeRef = useRef(recipe); recipeRef.current = recipe;
+  const recipeIdRef = useRef(recipeId); recipeIdRef.current = recipeId;
   const firstRun = useRef(true);
   const template = recipe.templates[current] ?? recipe.templates[recipe.entry.template];
   const templateName = recipe.templates[current] ? current : recipe.entry.template;
@@ -52,13 +61,31 @@ export function Recorder({ recipeId: initialId, initialRecipe, initialUrl }: { r
   useIpcEvent('recorder:status', (s) => { setStatus(s); if (s.url && s.url !== 'about:blank') setUrlInput(s.url); });
   useIpcEvent('inspector:message', (m) => {
     switch (m.type) {
-      case 'picked': setPicked(m.element); setSelection({ kind: 'pick' }); setDetected(null); break;
-      case 'list.detected': setDetected([m.list]); setPicked(null); setSelection({ kind: 'list', template: templateName }); break;
+      // while the copilot waits for picks it consumes them (main forwards them); keep the capture panel quiet
+      case 'picked': if (copilotWaiting.current) break; setPicked(m.element); setSelection({ kind: 'pick' }); setDetected(null); break;
+      case 'list.detected': if (copilotWaiting.current) break; setDetected([m.list]); setPicked(null); setSelection({ kind: 'list', template: templateName }); break;
       case 'error': toast(m.message, 'error'); break;
       case 'navigated': if (m.url && m.url !== 'about:blank') setUrlInput(m.url); break;
       default: break;
     }
   });
+
+  // ---- copilot ----
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key === '/') { e.preventDefault(); setCopilotOpen(true); setCopilotFocus((n) => n + 1); } };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  const toggleCopilot = () => setCopilotOpen((v) => { try { localStorage.setItem(LS_COPILOT_OPEN, String(!v)); } catch { /* ignore */ } return !v; });
+  const onCopilotRecipe = useCallback((r: Recipe) => {
+    dispatch({ type: 'replaceRecipe', recipe: r });
+    setDirty(true);
+    if (r.id && r.id !== recipeIdRef.current) setRecipeId(r.id);
+    setCurrent((c) => (r.templates[c] ? c : r.entry.template));
+  }, []);
+  const onCopilotRun = useCallback((runId: string) => {
+    go({ name: 'run', runId, back: { name: 'recorder', recipeId: recipeIdRef.current, recipe: recipeRef.current, key: 0, copilotSessionKey: copilotSession, restoreCopilot: true } });
+  }, [go, copilotSession]);
 
   const openUrl = (url: string) => run(async () => { setStatus(await invoke('recorder.open', url)); if (status.mode === 'off') await invoke('recorder.setMode', 'pick'); });
   const setMode = (mode: InspectorMode) => run(async () => { if (!status.open) setStatus(await invoke('recorder.open', urlInput)); await invoke('recorder.setMode', mode); });
@@ -176,6 +203,7 @@ export function Recorder({ recipeId: initialId, initialRecipe, initialUrl }: { r
           <div className="btn-group">{modeBtn('pick', 'Pick field')}{modeBtn('pickList', 'Pick list')}{modeBtn('pickAction', 'Pick action')}{modeBtn('off', 'Off')}</div>
           <Btn size="sm" onClick={detectLists} disabled={!status.open}>Auto-detect lists</Btn>
           <Btn size="sm" onClick={aiSuggestFields} disabled={!status.open || aiBusy}>{aiBusy ? 'Asking AI…' : 'AI suggest'}</Btn>
+          <Btn size="sm" active={copilotOpen} onClick={toggleCopilot} title="Show or hide the Copilot chat (Ctrl+/ focuses it)" data-testid="copilot-toggle">Copilot</Btn>
           <div className="grow" />
           <Input value={recipe.name} style={{ width: 180 }} onChange={(e) => dispatchDirty({ type: 'patch', patch: { name: e.target.value } })} title="recipe name" />
           {dirty && <Badge tone="warn">unsaved</Badge>}
@@ -249,6 +277,7 @@ export function Recorder({ recipeId: initialId, initialRecipe, initialUrl }: { r
       </div>
 
       <DataPreview recipe={recipe} templateName={templateName} recorderOpen={status.open} refreshKey={refreshKey} collapsed={previewCollapsed} onToggle={() => setPreviewCollapsed((v) => !v)} />
+      {copilotOpen && <CopilotPanel recipe={recipe} sessionKey={copilotSession} restore={restoreCopilot} onRecipe={onCopilotRecipe} onOpenRun={onCopilotRun} onWaiting={(w) => { copilotWaiting.current = w; }} focusSignal={copilotFocus} />}
 
       {drawer && <RecipeSettings recipe={recipe} dispatch={dispatchDirty} onClose={() => setDrawer(null)} initialTab={drawer === 'json' ? 'json' : 'general'} />}
       {saveAs && <PromptModal title="Save recipe as" label="New recipe name" defaultValue={`${recipe.name} copy`} submitLabel="Save" onClose={() => setSaveAs(false)} onSubmit={(name) => { setRecipeId(undefined); void validateAndSave({ name }); }} />}

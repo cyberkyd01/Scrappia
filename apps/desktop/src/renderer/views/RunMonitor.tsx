@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RunRecord, RunStats, DriftEvent, DiffResult, Sink } from '@scrappia/core';
 import { invoke, useIpcEvent } from '../api';
-import { useApp, RunStatusBadge } from '../App';
+import { useApp, RunStatusBadge, type View } from '../App';
 import { Btn, StatCard, Badge, Tabs, Empty, Select, useToast, useAsync } from '../components/ui';
 import { cellText, fmtDuration, fmtNum, fmtTime, truncate, fmtBytes } from '../lib/format';
 import { blankSink } from '../state/recipe';
@@ -14,7 +14,7 @@ interface LogLine { ts: number; level: string; msg: string }
 const MAX_ROWS = 500;
 const ROW_H = 26;
 
-export function RunMonitor({ runId }: { runId: string }) {
+export function RunMonitor({ runId, back }: { runId: string; back?: View }) {
   const { go } = useApp();
   const toast = useToast();
   const { run: act } = useAsync();
@@ -36,7 +36,9 @@ export function RunMonitor({ runId }: { runId: string }) {
     const r = await invoke('runs.get', runId);
     setRecord(r);
     if (r) {
-      setStats(r.stats as unknown as RunStats);
+      // a just-created run has `stats: {}` until its first progress event; treat that as "no stats yet"
+      const initial = r.stats as unknown as Partial<RunStats>;
+      setStats(initial && initial.requests ? (initial as RunStats) : undefined);
       const ds = await invoke('runs.datasets', runId);
       setDatasets(ds);
       const rs = await invoke('runs.rows', runId, dataset, { limit: MAX_ROWS });
@@ -98,7 +100,7 @@ export function RunMonitor({ runId }: { runId: string }) {
   return (
     <div className="view">
       <div className="view-header">
-        <Btn size="sm" variant="ghost" onClick={() => go({ name: 'home' })}>← Recipes</Btn>
+        {back?.name === 'recorder' ? <Btn size="sm" variant="ghost" onClick={() => go(back)} data-testid="run-back-recorder">← Back to recorder</Btn> : <Btn size="sm" variant="ghost" onClick={() => go({ name: 'home' })}>← Recipes</Btn>}
         <h1>{record?.recipeName ?? 'Run'}</h1>
         <RunStatusBadge status={status} />
         <span className="faint small">{record ? `${record.trigger} · started ${fmtTime(record.startedAt)}` : ''}{record?.finishedAt ? ` · ${fmtDuration(record.finishedAt - record.startedAt)}` : ''}</span>

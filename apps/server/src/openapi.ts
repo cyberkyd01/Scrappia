@@ -49,6 +49,7 @@ const rowsResponses = {
 
 const RUN_STATUS = ['running', 'succeeded', 'partial', 'failed', 'cancelled'];
 const REQUEST_STATUS = ['pending', 'running', 'done', 'failed', 'skipped'];
+const COPILOT_EVENT_TYPES = ['picked', 'list.detected', 'navigated', 'run.finished'];
 const RUN_EVENT_TYPES = ['run.start', 'run.progress', 'run.done', 'request.start', 'request.done', 'rows', 'drift', 'alert', 'log', 'export.done', 'captcha.needed'];
 
 export function buildOpenApi(opts: { version: string; serverUrl?: string }) {
@@ -89,7 +90,7 @@ export function buildOpenApi(opts: { version: string; serverUrl?: string }) {
     servers: [{ url: opts.serverUrl ?? '/', description: 'This server' }],
     tags: [
       { name: 'System' }, { name: 'Recipes' }, { name: 'Runs' }, { name: 'Datasets' }, { name: 'Events' },
-      { name: 'Settings' }, { name: 'Secrets' }, { name: 'API keys' }, { name: 'Schedules' }, { name: 'Alerts' }, { name: 'AI' }, { name: 'Reference' },
+      { name: 'Settings' }, { name: 'Secrets' }, { name: 'API keys' }, { name: 'Schedules' }, { name: 'Alerts' }, { name: 'AI' }, { name: 'Copilot' }, { name: 'Reference' },
     ],
     components: {
       securitySchemes: {
@@ -146,6 +147,15 @@ export function buildOpenApi(opts: { version: string; serverUrl?: string }) {
         Schedule: obj({ id: str(), recipeId: str(), recipeName: { type: ['string', 'null'] }, cron: str(), tz: str(), enabled: bool(), skipIfRunning: bool(), lastRunAt: int(), nextRunAt: int(), lastRunAtIso: { type: ['string', 'null'] }, nextRunAtIso: { type: ['string', 'null'] }, createdAt: int() }, ['id', 'recipeId', 'cron', 'enabled']),
         Alert: obj({ id: str(), runId: str(), recipeId: str(), kind: str(), title: str(), body: str(), detail: anyObj(), createdAt: int(), read: bool() }, ['id', 'kind', 'title', 'body', 'createdAt', 'read']),
         Preview: obj({ url: str(), status: int(), records: arr(anyObj()), page: anyObj(), listMatched: int(), fieldMatches: anyObj() }),
+        CopilotEvent: obj({ type: str(undefined, { enum: COPILOT_EVENT_TYPES }) }, ['type'], { additionalProperties: true, description: 'Something that happened on the client side: `picked` (+ `element`), `list.detected` (+ `list`), `navigated` (+ `url`), `run.finished` (+ `runId`, `status`, `rows`).' }),
+        CopilotProgress: obj({ type: str(undefined, { enum: ['thinking', 'call', 'result', 'reply'] }), tool: str(), args: anyObj(), ok: bool(), summary: str(), text: str() }, ['type']),
+        CopilotAction: obj({ tool: str('Copilot tool that was executed (e.g. `detect_lists`, `set_list`, `test_run`, `start_run`).'), args: anyObj(), ok: bool('False when the tool failed; the error text is in `summary` and was fed back to the model.'), summary: str() }, ['tool', 'args', 'ok', 'summary']),
+        CopilotTurnResult: obj({
+          reply: str('What the copilot says to the user.'), recipe: ref('Recipe'), actions: arr(ref('CopilotAction')),
+          waitingForPicks: bool('Always false on the server (element picking needs the desktop recorder).'), runId: str('Set when the turn started a full run; poll `GET /api/runs/{runId}`.'), done: bool('True when the copilot considers the job complete.'),
+          usage: obj({ calls: int(), inputTokens: int(), outputTokens: int() }),
+        }, ['reply', 'recipe', 'actions', 'waitingForPicks', 'done', 'usage']),
+        CopilotSession: obj({ id: str(), createdAt: int('epoch ms'), lastUsedAt: int('epoch ms'), provider: str('AI provider used by the session.'), recipe: ref('Recipe'), runIds: arr(str(), 'Full runs started by this session.'), history: arr(obj({ role: str(undefined, { enum: ['user', 'assistant'] }), content: str() }, ['role', 'content'])) }, ['id', 'createdAt', 'lastUsedAt', 'provider', 'recipe', 'runIds']),
       },
     },
     paths: {
@@ -265,6 +275,33 @@ export function buildOpenApi(opts: { version: string; serverUrl?: string }) {
       },
       '/api/ai/ask': {
         post: { tags: ['AI'], summary: 'Ask a question about a page (optionally structured with a JSON schema)', ...AUTH, requestBody: { required: true, content: { 'application/json': { schema: obj({ url: str(undefined, { format: 'uri' }), question: str(), schema: anyObj('JSON schema for structured output.'), provider: str(), timeoutMs: int() }, ['url', 'question']) } } }, responses: { 200: json(obj({ answer: { description: 'String, or JSON when `schema` was given.' }, fetched: obj({ url: str(), status: int(), bytes: int() }), usage: obj({ calls: int(), inputTokens: int(), outputTokens: int() }) }), 'Answer.'), 400: errorResponse('`ai_not_configured` or validation error.'), 401: ERR[401], 502: errorResponse('The page could not be fetched (`fetch_failed`).') } },
+      },
+
+      '/api/copilot/sessions': {
+        post: {
+          tags: ['Copilot'], summary: 'Start a copilot session (conversational scraper builder, no browser)', ...AUTH,
+          description: 'Creates an in-memory session bound to your API key. Give a `url` (a minimal recipe is created) or a `recipe` to continue working on. Sessions expire after 60 minutes without use; at most 20 live sessions per key. Element picking is unavailable here, so the copilot works from `detect_lists` / `test_selector` / `preview` / `test_run` and can `start_run` (the run appears under `/api/runs`).',
+          requestBody: { required: true, content: { 'application/json': { schema: obj({ url: str('Page to start from.', { format: 'uri' }), recipe: ref('Recipe'), provider: str('AI provider name from settings (default: the default provider).'), instructions: str('Extra guidance appended to the copilot system prompt.') }) } } },
+          responses: { 201: json(obj({ id: str(), recipe: ref('Recipe'), createdAt: int(), provider: str() }, ['id', 'recipe']), 'Session created; `recipe` is the working recipe.'), 400: errorResponse('`ai_not_configured`, `unknown_provider`, `invalid_recipe` or validation error.'), 401: ERR[401], 429: errorResponse('`copilot_session_limit` (20 per key) or rate limit.') },
+        },
+      },
+      '/api/copilot/sessions/{id}': {
+        parameters: [pathId('id', 'Copilot session id')],
+        get: { tags: ['Copilot'], summary: 'Session state: working recipe, runs started, conversation history', ...AUTH, responses: { 200: json(ref('CopilotSession'), 'Session.'), 401: ERR[401], 404: errorResponse('Unknown, expired or not your session.') } },
+        delete: { tags: ['Copilot'], summary: 'End a session', ...AUTH, responses: { 200: json(ref('Ok'), 'Ended.'), 401: ERR[401], 404: ERR[404] } },
+      },
+      '/api/copilot/sessions/{id}/turn': {
+        parameters: [pathId('id', 'Copilot session id')],
+        post: {
+          tags: ['Copilot'], summary: 'Send a message or event; the copilot inspects, edits, verifies and runs', ...AUTH,
+          description: 'One turn: the model may execute many tools (listed in `actions`) before replying. Pass `recipe` to replace the working recipe first. With `?stream=1` the response is `text/event-stream`: `event: progress` messages (CopilotProgress) followed by one `event: result` (CopilotTurnResult) or `event: error`.',
+          parameters: [q('stream', { type: 'string', enum: ['1', '0'] }, 'Stream progress as SSE.')],
+          requestBody: { required: true, content: { 'application/json': { schema: obj({ message: str('What the user says.'), event: ref('CopilotEvent'), recipe: ref('Recipe') }) } } },
+          responses: {
+            200: { description: 'Turn result (JSON), or an SSE stream when `stream=1`.', content: { 'application/json': { schema: ref('CopilotTurnResult') }, 'text/event-stream': { schema: ref('CopilotProgress'), example: ['event: progress', 'id: 1', 'data: {"type":"thinking"}', '', 'event: progress', 'id: 2', 'data: {"type":"call","tool":"detect_lists","args":{}}', '', 'event: result', 'id: 3', 'data: {"reply":"...","recipe":{},"actions":[],"done":false}', '', ''].join(String.fromCharCode(10)) } } },
+            400: ERR[400], 401: ERR[401], 404: ERR[404], 409: errorResponse('`copilot_busy`: the previous turn is still running.'), 502: errorResponse('`copilot_failed`: the AI provider or a tool failed.'),
+          },
+        },
       },
     },
   };

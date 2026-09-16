@@ -7,3 +7,4 @@ export { startHttp, type HttpOptions } from './http.js';
 export { registerTools, fieldReport, type ToolOptions } from './tools.js';
 export { registerResources, ROWS_RESOURCE_LIMIT } from './resources.js';
 export { registerPrompts } from './prompts.js';
+export { CopilotSessionStore, copilotStoreFor, startCopilotSession, AppCopilotHost, type CopilotStoreOptions, type CopilotSessionRecord } from './copilot.js';

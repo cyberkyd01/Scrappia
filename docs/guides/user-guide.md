@@ -24,6 +24,13 @@ Think of a recipe as a set of instructions for a very patient assistant:
 Each "page like this" is a **template**. Most recipes have one or two templates: a listing and a
 detail page.
 
+## Prefer to talk instead of click?
+
+The **Copilot** panel at the bottom of the recorder builds recipes from a sentence, or guides you
+through picking elements step by step. It is the fastest way to get a working scraper. See the
+[Copilot guide](copilot-guide.md). Everything below still applies: whatever Copilot builds appears
+in the template tree and can be edited by hand.
+
 ## The recorder, button by button
 
 When you open the recorder, two windows appear: the Scrappia window with the panels, and a
