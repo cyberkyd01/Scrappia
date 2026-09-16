@@ -73,7 +73,12 @@ export function registerIpc(ctx: IpcContext) {
   handle('runs.start', async (recipe, opts = {}) => {
     // resolve ids so full runs get the recorder's cookies/user agent too (the parsed recipe keeps its id)
     const resolved: string | RecipeInput | Recipe = typeof recipe === 'string' ? (core.getRecipe(recipe).recipe ?? recipe) : recipe;
-    const withSession = await withRecorderSession(recorder, resolved);
+    let withSession = await withRecorderSession(recorder, resolved);
+    // A full run with no output configured still produces something the user can open: an Excel file named after the recipe.
+    if (!opts.dryRun && typeof withSession !== 'string' && !(withSession.sinks && withSession.sinks.length)) {
+      const slug = (withSession.name || 'recipe').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'recipe';
+      withSession = { ...withSession, sinks: [{ type: 'xlsx', path: `exports/${slug}.xlsx`, mode: 'overwrite' }] };
+    }
     const active = await core.startRun(withSession, { dryRun: opts.dryRun, maxRequests: opts.maxRequests, headless: opts.headless, trigger: opts.trigger ?? (opts.dryRun ? 'test' : 'manual') });
     active.promise.catch(() => undefined);
     return active.run;
