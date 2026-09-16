@@ -62,7 +62,10 @@ your recipe survive site changes), and the choices below.
 Bottom panel, the **data preview**: the rows the current template would extract from the page in
 front of you. Each column shows how many rows were empty and which selector candidate matched, so
 you can spot problems before running. **Test run (5 pages)** runs the whole recipe for a few pages
-without exporting.
+without exporting; its tab shows the status, page and row counts, and a short log of every page
+fetched with its HTTP status, so a run that produces nothing tells you why (see
+[Troubleshooting](troubleshooting.md)). Runs started from the desktop reuse the cookies and user
+agent of the recorder browser, so anything you accepted or logged into while recording carries over.
 
 ## Capturing data
 
@@ -124,6 +127,14 @@ of pages in the pagination editor.
 
 Pick one of the numbered links and choose **Set as next page**, then change the pagination type to
 **page links** in the editor. All numbered links are followed.
+
+A "Next" button that is not a link (JavaScript pagination) works the same way: Scrappia notices
+there is no link address and clicks the button in the page instead. Disabled buttons on the last
+page end the run cleanly.
+
+Tip for big shops (Amazon, eBay and similar): after **Set as next page**, open the pagination
+entry in the template tree and check the selector. Prefer a short, stable class such as
+`a.s-pagination-next` over a long label that contains a page number, so it matches on every page.
 
 ### "Load more" buttons
 
@@ -208,7 +219,8 @@ Open with the gear button in the recorder.
   the file, **append** to it, or **upsert** (update rows with the same key, add new ones).
 - **Monitor**: turn on to compare each run with the previous one and be alerted about added,
   removed or changed rows, layout drift, failures or empty results. Channels: desktop, webhook,
-  Slack, Discord, Telegram, ntfy, email.
+  Slack, Discord, Telegram, ntfy, email. Desktop alerts appear in the **Alerts** card on Home with
+  an unread count, an "Open run" button and "Mark read".
 - **Schedule**: a cron expression such as `0 */6 * * *` (every 6 hours) with a timezone. The
   preview shows the next run times. Scheduled runs happen while the desktop app is open; use the
   server for always-on scheduling.

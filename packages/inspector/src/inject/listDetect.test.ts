@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { detectListFromElement, detectLists, scanLists, signatureOf, similarity, toDetectedList } from './listDetect.js';
 import { queryOne } from './query.js';
-import { loadHtml, productGrid } from './fixtures.test-util.js';
+import { amazonResults, loadHtml, productGrid } from './fixtures.test-util.js';
 
 describe('signatures', () => {
   beforeEach(() => {
@@ -41,6 +41,19 @@ describe('detectListFromElement (click-based)', () => {
     for (const alt of list.alternatives!) expect(alt.selector[0].value).not.toBe(list.selector[0].value);
   });
 
+  it('accepts a two-item list only when minRecords is lowered (pick list mode)', () => {
+    loadHtml('<div id="list"><div class="row">Row 1</div><div class="row">Row 2</div></div><button id="more">Load more</button>');
+    const clicked = document.querySelector('#list .row:nth-child(2)')!;
+    expect(detectListFromElement(clicked)).toBeNull();
+    const det = detectListFromElement(clicked, { minRecords: 2 });
+    expect(det).not.toBeNull();
+    expect(det!.records.length).toBe(2);
+    expect(det!.clickedIndex).toBe(1);
+    const list = toDetectedList(det!);
+    expect(list.count).toBe(2);
+    expect(queryOne(list.selector[0], document).length).toBe(2);
+  });
+
   it('does not pick the tiny star-icon list when clicking a star', () => {
     const star = document.querySelector('article[data-sku="SKU-2"] .star-rating i')!;
     const det = detectListFromElement(star)!;
@@ -52,6 +65,43 @@ describe('detectListFromElement (click-based)', () => {
   it('returns null for an element that is not part of a list', () => {
     expect(detectListFromElement(document.querySelector('h1.page-title')!)).toBeNull();
     expect(detectListFromElement(document.querySelector('#sidebar .promo')!)).toBeNull();
+  });
+});
+
+describe('Amazon-like results with sponsored cards', () => {
+  beforeEach(() => {
+    loadHtml(amazonResults(), 'https://www.amazon.com/s?k=wireless+headphones');
+  });
+
+  it('a click on a title span yields all 12 cards (sponsored included) with a selector matching exactly them', () => {
+    const clicked = document.querySelector('[data-asin="B0005XYZ"] h2 span')!;
+    const det = detectListFromElement(clicked)!;
+    expect(det).not.toBeNull();
+    expect(det.records.length).toBe(12);
+    expect(det.records.every((r) => r.getAttribute('data-component-type') === 's-search-result')).toBe(true);
+    expect(det.records[det.clickedIndex].contains(clicked)).toBe(true);
+    const list = toDetectedList(det);
+    expect(list.count).toBe(12);
+    const matched = queryOne(list.selector[0], document);
+    expect(matched.length).toBe(12);
+    expect(matched.every((m) => m.getAttribute('data-component-type') === 's-search-result')).toBe(true);
+    expect(list.selector[0].value).not.toMatch(/nth-child|sg-col-\d/);
+    const names = list.fields.map((f) => f.name);
+    for (const n of ['title', 'price', 'url', 'image']) expect(names, names.join(',')).toContain(n);
+    for (const n of ['title', 'price']) expect(list.fields.find((f) => f.name === n)!.coverage).toBeGreaterThanOrEqual(0.8);
+  });
+
+  it('a click inside a sponsored card gives the same 12-record list', () => {
+    const clicked = document.querySelector('[data-asin="B0003XYZ"] .a-price-whole')!;
+    const det = detectListFromElement(clicked)!;
+    expect(det.records.length).toBe(12);
+    expect(det.clickedIndex).toBe(2);
+  });
+
+  it('detectLists ranks the result cards first', () => {
+    const lists = detectLists(document);
+    expect(lists[0].count).toBe(12);
+    expect(lists[0].fields.map((f) => f.name)).toEqual(expect.arrayContaining(['title', 'price']));
   });
 });
 

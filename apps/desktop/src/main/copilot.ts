@@ -16,6 +16,7 @@ import {
 } from '@scrappia/core';
 import type { IpcEvents, CopilotAvailable, CopilotLogItem, CopilotStartInput, CopilotState, CopilotStatus, CopilotTurnInput, DesktopSettings } from '../shared/ipc';
 import type { RecorderSession } from './recorder';
+import { withRecorderSession } from './session';
 
 const HIGHLIGHT_MS = 2000;
 
@@ -80,7 +81,7 @@ export class RecorderCopilotHost implements CopilotHost {
   /** Dry run through the real engine (separate headless browser when needed; never the recorder page). */
   async testRun(recipe: Recipe, maxRequests: number) {
     const { app } = this.o;
-    const active = await app.startRun(recipe, { dryRun: true, maxRequests, headless: true, trigger: 'copilot-test' });
+    const active = await app.startRun(await withRecorderSession(this.o.recorder, recipe), { dryRun: true, maxRequests, headless: true, trigger: 'copilot-test' });
     const { run, stats } = await active.promise;
     const rows = Array.from(app.storage.iterRows(run.id, undefined, { limit: 5 })).map((r) => r.data);
     const drift = app.storage.listDrift(run.id).map((d) => `${d.kind} ${d.template}${d.field ? `.${d.field}` : ''}`);
@@ -88,7 +89,7 @@ export class RecorderCopilotHost implements CopilotHost {
   }
 
   async startRun(recipe: Recipe) {
-    const active = await this.o.app.startRun(recipe, { trigger: 'copilot' });
+    const active = await this.o.app.startRun(await withRecorderSession(this.o.recorder, recipe), { trigger: 'copilot' });
     active.promise.catch(() => undefined);
     this.o.onRunStarted(active.run.id);
     return { runId: active.run.id };

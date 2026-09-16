@@ -16,8 +16,8 @@ export function RecipeSettings({ recipe, dispatch, onClose, initialTab = 'genera
   const [secrets, setSecrets] = useState<string[]>([]);
   useEffect(() => { void invoke('secrets.list').then(setSecrets).catch(() => undefined); }, []);
   return (
-    <div className="drawer">
-      <div className="drawer-head"><span className="grow">Recipe settings</span><Btn size="sm" variant="ghost" onClick={onClose}>✕</Btn></div>
+    <div className="drawer" data-testid="recipe-settings">
+      <div className="drawer-head"><span className="grow">Recipe settings</span><Btn size="sm" variant="ghost" onClick={onClose} data-testid="drawer-close">✕</Btn></div>
       <Tabs<Tab> value={tab} onChange={setTab} tabs={[{ id: 'general', label: 'General' }, { id: 'engine', label: 'Engine' }, { id: 'output', label: 'Output' }, { id: 'sinks', label: `Outputs (${recipe.sinks.length})` }, { id: 'monitor', label: 'Monitor' }, { id: 'schedule', label: 'Schedule' }, { id: 'ai', label: 'AI' }, { id: 'json', label: 'JSON' }]} />
       <div className="drawer-body">
         {tab === 'general' && <GeneralTab recipe={recipe} dispatch={dispatch} />}
@@ -42,19 +42,19 @@ function GeneralTab({ recipe, dispatch }: { recipe: Recipe; dispatch: Dispatch<R
       <FieldRow label="Description"><Input full value={recipe.description ?? ''} onChange={(e) => dispatch({ type: 'patch', patch: { description: e.target.value || undefined } })} /></FieldRow>
       <FieldRow label="Tags" hint="comma separated"><Input full value={recipe.tags.join(', ')} onChange={(e) => dispatch({ type: 'patch', patch: { tags: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) } })} /></FieldRow>
       <FieldRow label="Entry URLs" stack hint="one per line; {{keyword}} tokens are expanded from the keyword lists below">
-        <Textarea full rows={4} value={recipe.entry.urls.join('\n')} onChange={(e) => dispatch({ type: 'setEntry', patch: { urls: e.target.value.split('\n').map((s) => s.trim()).filter(Boolean) } })} />
+        <Textarea full rows={4} value={recipe.entry.urls.join('\n')} onChange={(e) => dispatch({ type: 'setEntry', patch: { urls: e.target.value.split('\n').map((s) => s.trim()).filter(Boolean) } })} data-testid="general-entry-urls" />
       </FieldRow>
       <div className="row gap-12">
         <FieldRow label="Entry template"><Select value={recipe.entry.template} onChange={(e) => dispatch({ type: 'setEntry', patch: { template: e.target.value } })}>{Object.keys(recipe.templates).map((t) => <option key={t}>{t}</option>)}</Select></FieldRow>
         <FieldRow label="Method"><Select value={recipe.entry.method} onChange={(e) => dispatch({ type: 'setEntry', patch: { method: e.target.value as 'GET' | 'POST' } })}><option>GET</option><option>POST</option></Select></FieldRow>
       </div>
       {recipe.entry.method === 'POST' && <FieldRow label="POST body" stack><Textarea full value={recipe.entry.body ?? ''} onChange={(e) => dispatch({ type: 'setEntry', patch: { body: e.target.value || undefined } })} /></FieldRow>}
-      <div className="row"><h4 className="grow">Keywords</h4><Select value={recipe.keywordMode} onChange={(e) => dispatch({ type: 'setKeywords', keywords: recipe.keywords, mode: e.target.value as Recipe['keywordMode'] })}><option value="product">cartesian product</option><option value="zip">zip (row-wise)</option></Select><Btn size="sm" onClick={() => setKw([...kw, [`kw${kw.length + 1}`, []]])}>+ list</Btn></div>
+      <div className="row"><h4 className="grow">Keywords</h4><Select value={recipe.keywordMode} onChange={(e) => dispatch({ type: 'setKeywords', keywords: recipe.keywords, mode: e.target.value as Recipe['keywordMode'] })}><option value="product">cartesian product</option><option value="zip">zip (row-wise)</option></Select><Btn size="sm" onClick={() => setKw([...kw, [`kw${kw.length + 1}`, []]])} data-testid="keywords-add">+ list</Btn></div>
       {kw.map(([name, values], i) => (
         <div className="row" key={i} style={{ alignItems: 'flex-start' }}>
-          <Input value={name} style={{ width: 120 }} onChange={(e) => { const n = kw.slice(); n[i] = [e.target.value, values]; setKw(n); }} />
-          <Textarea className="grow" rows={3} value={values.join('\n')} placeholder="one value per line" onChange={(e) => { const n = kw.slice(); n[i] = [name, e.target.value.split('\n').map((s) => s.trim()).filter(Boolean)]; setKw(n); }} />
-          <Btn size="sm" variant="ghost" onClick={() => setKw(kw.filter((_, j) => j !== i))}>✕</Btn>
+          <Input value={name} style={{ width: 120 }} onChange={(e) => { const n = kw.slice(); n[i] = [e.target.value, values]; setKw(n); }} data-testid={`keyword-name-${i}`} />
+          <Textarea className="grow" rows={3} value={values.join('\n')} placeholder="one value per line" onChange={(e) => { const n = kw.slice(); n[i] = [name, e.target.value.split('\n').map((s) => s.trim()).filter(Boolean)]; setKw(n); }} data-testid={`keyword-values-${i}`} />
+          <Btn size="sm" variant="ghost" onClick={() => setKw(kw.filter((_, j) => j !== i))} data-testid={`keyword-remove-${i}`}>✕</Btn>
         </div>
       ))}
     </div>
@@ -68,7 +68,7 @@ function EngineTab({ recipe, dispatch, secrets }: { recipe: Recipe; dispatch: Di
   return (
     <div className="col">
       <div className="row wrap gap-12">
-        <FieldRow label="Mode"><Select value={e.mode} onChange={(ev) => set({ mode: ev.target.value as EngineConfig['mode'] })}><option value="auto">auto (HTTP, browser fallback)</option><option value="http">http only</option><option value="browser">browser only</option></Select></FieldRow>
+        <FieldRow label="Mode"><Select value={e.mode} onChange={(ev) => set({ mode: ev.target.value as EngineConfig['mode'] })} data-testid="engine-mode"><option value="auto">auto (HTTP, browser fallback)</option><option value="http">http only</option><option value="browser">browser only</option></Select></FieldRow>
         <FieldRow label="Browser"><Select value={e.browser} onChange={(ev) => set({ browser: ev.target.value as EngineConfig['browser'] })}><option value="patchright">patchright (stealth)</option><option value="playwright">playwright</option></Select></FieldRow>
       </div>
       <div className="row wrap gap-12">
@@ -78,9 +78,9 @@ function EngineTab({ recipe, dispatch, secrets }: { recipe: Recipe; dispatch: Di
         <Check label="respect robots.txt" checked={e.respectRobots} onChange={(v) => set({ respectRobots: v })} />
       </div>
       <div className="row wrap gap-12">
-        <span className="row gap-4"><span className="muted small">concurrency</span><Input type="number" min={1} max={64} style={{ width: 60 }} value={e.concurrency} onChange={(ev) => set({ concurrency: Number(ev.target.value) })} /></span>
+        <span className="row gap-4"><span className="muted small">concurrency</span><Input type="number" min={1} max={64} style={{ width: 60 }} value={e.concurrency} onChange={(ev) => set({ concurrency: Number(ev.target.value) })} data-testid="engine-concurrency" /></span>
         <span className="row gap-4"><span className="muted small">per host</span><Input type="number" min={1} style={{ width: 60 }} value={e.perHostConcurrency} onChange={(ev) => set({ perHostConcurrency: Number(ev.target.value) })} /></span>
-        <span className="row gap-4"><span className="muted small">delay ms</span><Input type="number" min={0} style={{ width: 72 }} value={e.delayMs} onChange={(ev) => set({ delayMs: Number(ev.target.value) })} /></span>
+        <span className="row gap-4"><span className="muted small">delay ms</span><Input type="number" min={0} style={{ width: 72 }} value={e.delayMs} onChange={(ev) => set({ delayMs: Number(ev.target.value) })} data-testid="engine-delay" /></span>
         <span className="row gap-4"><span className="muted small">jitter ms</span><Input type="number" min={0} style={{ width: 72 }} value={e.jitterMs} onChange={(ev) => set({ jitterMs: Number(ev.target.value) })} /></span>
         <span className="row gap-4"><span className="muted small">timeout ms</span><Input type="number" min={1000} style={{ width: 80 }} value={e.timeoutMs} onChange={(ev) => set({ timeoutMs: Number(ev.target.value) })} /></span>
         <span className="row gap-4"><span className="muted small">retries</span><Input type="number" min={0} style={{ width: 56 }} value={e.retries} onChange={(ev) => set({ retries: Number(ev.target.value) })} /></span>
@@ -136,7 +136,7 @@ function OutputTab({ recipe, dispatch }: { recipe: Recipe; dispatch: Dispatch<Re
       <div className="row wrap gap-12">
         <Check label="page URL" checked={o.addPageUrl} onChange={(v) => set({ addPageUrl: v })} />
         <Check label="timestamp" checked={o.addTimestamp} onChange={(v) => set({ addTimestamp: v })} />
-        <Check label="keyword" checked={o.addKeyword} onChange={(v) => set({ addKeyword: v })} />
+        <Check label="keyword" checked={o.addKeyword} onChange={(v) => set({ addKeyword: v })} testId="output-add-keyword" />
         <Check label="category path" checked={o.addCategoryPath} onChange={(v) => set({ addCategoryPath: v })} />
       </div>
       <FieldRow label="Column order" hint="comma separated; others follow"><Input full value={(o.columns ?? []).join(', ')} onChange={(e) => set({ columns: e.target.value ? e.target.value.split(',').map((s) => s.trim()).filter(Boolean) : undefined })} /></FieldRow>
@@ -173,11 +173,11 @@ function MonitorTab({ recipe, dispatch, secrets }: { recipe: Recipe; dispatch: D
   const upd = (i: number, c: AlertChannel) => set({ channels: m.channels.map((x, j) => (j === i ? c : x)) });
   return (
     <div className="col">
-      <Check label="enable change monitoring (compare each run with the previous one)" checked={m.enabled} onChange={(v) => set({ enabled: v })} />
+      <Check label="enable change monitoring (compare each run with the previous one)" checked={m.enabled} onChange={(v) => set({ enabled: v })} testId="monitor-enabled" />
       <FieldRow label="Watch fields" hint="comma separated; blank = all"><Input full value={m.fields.join(', ')} onChange={(e) => set({ fields: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} /></FieldRow>
       <FieldRow label="Threshold %" hint="only alert when a numeric field changes by more than this"><Input type="number" style={{ width: 80 }} value={m.thresholdPercent ?? ''} onChange={(e) => set({ thresholdPercent: e.target.value === '' ? undefined : Number(e.target.value) })} /></FieldRow>
       <FieldRow label="Alert on" stack><div className="row wrap gap-12">{events.map((ev) => <Check key={ev} label={ev} checked={m.on.includes(ev)} onChange={(v) => set({ on: v ? [...m.on, ev] : m.on.filter((x) => x !== ev) })} />)}</div></FieldRow>
-      <div className="row"><h4 className="grow">Channels</h4><Select value={addType} onChange={(e) => setAddType(e.target.value as AlertChannel['type'])}>{['desktop', 'webhook', 'slack', 'discord', 'telegram', 'ntfy', 'email'].map((t) => <option key={t}>{t}</option>)}</Select><Btn size="sm" onClick={() => set({ channels: [...m.channels, blank(addType)] })}>+ add</Btn></div>
+      <div className="row"><h4 className="grow">Channels</h4><Select value={addType} onChange={(e) => setAddType(e.target.value as AlertChannel['type'])} data-testid="monitor-channel-type">{['desktop', 'webhook', 'slack', 'discord', 'telegram', 'ntfy', 'email'].map((t) => <option key={t}>{t}</option>)}</Select><Btn size="sm" onClick={() => set({ channels: [...m.channels, blank(addType)] })} data-testid="monitor-add-channel">+ add</Btn></div>
       <datalist id="secret-names-monitor">{secrets.map((s) => <option key={s} value={s} />)}</datalist>
       {m.channels.map((c, i) => (
         <div className="card row wrap" key={i}>
@@ -251,9 +251,9 @@ function JsonTab({ recipe, dispatch }: { recipe: Recipe; dispatch: Dispatch<Reci
   };
   return (
     <div className="col" style={{ height: '100%' }}>
-      <div className="row"><Btn size="sm" onClick={() => void validate(false)}>Validate</Btn><Btn size="sm" variant="primary" onClick={() => void validate(true)}>Validate and apply</Btn><Btn size="sm" onClick={() => void navigator.clipboard.writeText(text).then(() => toast('Copied', 'ok'))}>Copy</Btn>{errors && errors.length === 0 && <Badge tone="ok">valid</Badge>}</div>
-      {errors && errors.length > 0 && <div className="errors">{errors.join('\n')}</div>}
-      <textarea className="jsonbox input" spellCheck={false} value={text} onChange={(e) => setText(e.target.value)} />
+      <div className="row"><Btn size="sm" onClick={() => void validate(false)} data-testid="json-validate">Validate</Btn><Btn size="sm" variant="primary" onClick={() => void validate(true)} data-testid="json-apply">Validate and apply</Btn><Btn size="sm" onClick={() => void navigator.clipboard.writeText(text).then(() => toast('Copied', 'ok'), () => toast('Clipboard unavailable', 'warn'))} data-testid="json-copy">Copy</Btn>{errors && errors.length === 0 && <Badge tone="ok"><span data-testid="json-valid">valid</span></Badge>}</div>
+      {errors && errors.length > 0 && <div className="errors" data-testid="json-errors">{errors.join('\n')}</div>}
+      <textarea className="jsonbox input" spellCheck={false} value={text} onChange={(e) => setText(e.target.value)} data-testid="json-text" />
     </div>
   );
 }

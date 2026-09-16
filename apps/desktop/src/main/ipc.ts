@@ -8,6 +8,7 @@ import { ScrappiaApp, Scheduler, createProvider, EXAMPLE_RECIPES, parseRecipe, t
 import type { IpcApi, IpcEvents, RecipeSummary } from '../shared/ipc';
 import type { RecorderSession } from './recorder';
 import type { CopilotManager } from './copilot';
+import { withRecorderSession } from './session';
 
 export interface IpcContext {
   app: ScrappiaApp;
@@ -20,6 +21,16 @@ export interface IpcContext {
 export function sendEvent<K extends keyof IpcEvents>(win: BrowserWindow | undefined, channel: K, payload: IpcEvents[K]) {
   if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
   try { win.webContents.send(channel, payload); } catch { /* window closing */ }
+}
+
+/**
+ * Test harnesses (scripts/e2e-*.mjs) cannot drive native file dialogs: `SCRAPPIA_E2E_DIALOGS` holds a
+ * JSON object `{ open?, save?, directory? }` whose paths are returned instead of showing a dialog.
+ */
+function e2eDialogs(): { open?: string; save?: string; directory?: string } | undefined {
+  const raw = process.env.SCRAPPIA_E2E_DIALOGS;
+  if (!raw) return undefined;
+  try { return JSON.parse(raw) as { open?: string; save?: string; directory?: string }; } catch { return undefined; }
 }
 
 function handle<K extends keyof IpcApi>(channel: K, fn: (...args: Parameters<IpcApi[K]>) => ReturnType<IpcApi[K]> | Awaited<ReturnType<IpcApi[K]>>) {
@@ -60,7 +71,10 @@ export function registerIpc(ctx: IpcContext) {
 
   // ---- runs ----
   handle('runs.start', async (recipe, opts = {}) => {
-    const active = await core.startRun(recipe as string | RecipeInput, { dryRun: opts.dryRun, maxRequests: opts.maxRequests, headless: opts.headless, trigger: opts.trigger ?? (opts.dryRun ? 'test' : 'manual') });
+    // resolve ids so full runs get the recorder's cookies/user agent too (the parsed recipe keeps its id)
+    const resolved: string | RecipeInput | Recipe = typeof recipe === 'string' ? (core.getRecipe(recipe).recipe ?? recipe) : recipe;
+    const withSession = await withRecorderSession(recorder, resolved);
+    const active = await core.startRun(withSession, { dryRun: opts.dryRun, maxRequests: opts.maxRequests, headless: opts.headless, trigger: opts.trigger ?? (opts.dryRun ? 'test' : 'manual') });
     active.promise.catch(() => undefined);
     return active.run;
   });
@@ -118,11 +132,15 @@ export function registerIpc(ctx: IpcContext) {
 
   // ---- dialogs / shell / files ----
   handle('dialogs.save', async (opts) => {
+    const stub = e2eDialogs();
+    if (stub) return stub.save;
     const win = ctx.window();
     const r = win ? await dialog.showSaveDialog(win, { defaultPath: opts.defaultPath, filters: opts.filters }) : await dialog.showSaveDialog({ defaultPath: opts.defaultPath, filters: opts.filters });
     return r.canceled ? undefined : r.filePath;
   });
   handle('dialogs.open', async (opts) => {
+    const stub = e2eDialogs();
+    if (stub) return opts.directory ? stub.directory : stub.open;
     const win = ctx.window();
     const o = { filters: opts.filters, properties: [opts.directory ? 'openDirectory' : 'openFile'] as Array<'openFile' | 'openDirectory'> };
     const r = win ? await dialog.showOpenDialog(win, o) : await dialog.showOpenDialog(o);

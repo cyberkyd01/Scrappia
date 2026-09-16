@@ -23,8 +23,8 @@ export function TemplateTree({ recipe, current, selection, onSelect, onSetCurren
         const isCurrent = name === current;
         const sel = (s: Selection) => `node${same(selection, s) ? ' selected' : ''}`;
         return (
-          <div className="group" key={name}>
-            <div className={`group-title${isCurrent ? '' : ' muted'}`} onClick={() => { onSetCurrent(name); onSelect({ kind: 'template', template: name }); }} style={{ cursor: 'pointer' }}>
+          <div className="group" key={name} data-testid={`tree-template-${name}`} data-current={isCurrent ? 'true' : 'false'}>
+            <div className={`group-title${isCurrent ? '' : ' muted'}`} onClick={() => { onSetCurrent(name); onSelect({ kind: 'template', template: name }); }} style={{ cursor: 'pointer' }} data-testid={`tree-template-title-${name}`}>
               <span>{isCurrent ? '▾' : '▸'}</span>
               <span className="grow ellipsis">{name}</span>
               {recipe.entry.template === name && <Badge tone="accent">entry</Badge>}
@@ -44,7 +44,7 @@ export function TemplateTree({ recipe, current, selection, onSelect, onSetCurren
                 {t.fields.length > 0 && (
                   <div className="children">
                     {t.fields.map((f, i) => (
-                      <div key={i} className={sel({ kind: 'field', template: name, target: 'page', index: i })} onClick={() => onSelect({ kind: 'field', template: name, target: 'page', index: i })}>
+                      <div key={i} className={sel({ kind: 'field', template: name, target: 'page', index: i })} onClick={() => onSelect({ kind: 'field', template: name, target: 'page', index: i })} data-testid={`tree-field-${f.name}`}>
                         <span className="k">{f.type}</span><span className="n">{f.name}</span><span className="sel">{f.selector?.[0]?.value}</span>
                       </div>
                     ))}
@@ -52,32 +52,32 @@ export function TemplateTree({ recipe, current, selection, onSelect, onSetCurren
                 )}
                 {t.list ? (
                   <>
-                    <div className={sel({ kind: 'list', template: name })} onClick={() => onSelect({ kind: 'list', template: name })}>
+                    <div className={sel({ kind: 'list', template: name })} onClick={() => onSelect({ kind: 'list', template: name })} data-testid="tree-list">
                       <span className="k">list</span><span className="n">records</span><span className="sel">{t.list.selector[0]?.value}</span>
                     </div>
                     <div className="children">
                       {t.list.fields.length === 0 && <div className="node faint"><span className="n tiny">no fields yet — pick elements inside a record</span></div>}
                       {t.list.fields.map((f, i) => (
-                        <div key={i} className={sel({ kind: 'field', template: name, target: 'list', index: i })} onClick={() => onSelect({ kind: 'field', template: name, target: 'list', index: i })}>
+                        <div key={i} className={sel({ kind: 'field', template: name, target: 'list', index: i })} onClick={() => onSelect({ kind: 'field', template: name, target: 'list', index: i })} data-testid={`tree-field-${f.name}`}>
                           <span className="k">{f.type}</span><span className="n">{f.name}</span><span className="sel">{f.selector?.[0]?.value}</span>
                         </div>
                       ))}
                       {t.list.follow.map((f, i) => (
-                        <div key={`f${i}`} className={sel({ kind: 'follow', template: name, target: 'list', index: i })} onClick={() => onSelect({ kind: 'follow', template: name, target: 'list', index: i })}>
+                        <div key={`f${i}`} className={sel({ kind: 'follow', template: name, target: 'list', index: i })} onClick={() => onSelect({ kind: 'follow', template: name, target: 'list', index: i })} data-testid="tree-follow">
                           <span className="k">follow</span><span className="n">{f.field ?? f.selector?.[0]?.value} → {f.template}</span><span className="sel">{f.mode}</span>
                         </div>
                       ))}
                     </div>
                   </>
                 ) : (
-                  <div className="node faint" onClick={() => onSelect({ kind: 'list', template: name })}><span className="k">list</span><span className="n tiny">none — use "Pick list" or auto-detect</span></div>
+                  <div className="node faint" onClick={() => onSelect({ kind: 'list', template: name })} data-testid="tree-list-none"><span className="k">list</span><span className="n tiny">none — use "Pick list" or auto-detect</span></div>
                 )}
                 {t.follow.map((f, i) => (
-                  <div key={`pf${i}`} className={sel({ kind: 'follow', template: name, target: 'page', index: i })} onClick={() => onSelect({ kind: 'follow', template: name, target: 'page', index: i })}>
+                  <div key={`pf${i}`} className={sel({ kind: 'follow', template: name, target: 'page', index: i })} onClick={() => onSelect({ kind: 'follow', template: name, target: 'page', index: i })} data-testid="tree-follow">
                     <span className="k">follow</span><span className="n">{f.field ?? f.selector?.[0]?.value} → {f.template}</span><span className="sel">{f.mode}</span>
                   </div>
                 ))}
-                <div className={sel({ kind: 'pagination', template: name })} onClick={() => onSelect({ kind: 'pagination', template: name })}>
+                <div className={sel({ kind: 'pagination', template: name })} onClick={() => onSelect({ kind: 'pagination', template: name })} data-testid="tree-pagination" data-type={t.pagination?.type ?? 'none'}>
                   <span className="k">paging</span><span className={`n${t.pagination ? '' : ' faint'}`}>{t.pagination ? t.pagination.type : 'none'}</span>
                   {t.pagination && 'selector' in t.pagination && t.pagination.selector && <span className="sel">{t.pagination.selector[0]?.value}</span>}
                 </div>
@@ -86,7 +86,7 @@ export function TemplateTree({ recipe, current, selection, onSelect, onSetCurren
           </div>
         );
       })}
-      <div className="mt-8"><Btn size="sm" onClick={onAddTemplate}>+ template</Btn></div>
+      <div className="mt-8"><Btn size="sm" onClick={onAddTemplate} data-testid="tree-add-template">+ template</Btn></div>
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { invoke } from '../../api';
 import { Btn, Input, Select, Check, FieldRow, Textarea, Badge, useToast } from '../ui';
 import { FIELD_TYPES, paginationFor, slugName } from '../../state/recipe';
 import { TransformEditor } from './TransformEditor';
+import { truncate } from '../../lib/format';
 
 // ---------- selectors ----------
 
@@ -30,24 +31,24 @@ export function SelectorEditor({ value, onChange, scope, label = 'Selectors' }: 
       <div className="row"><h4 className="grow">{label}</h4><span className="faint tiny">first = primary, others = fallbacks</span><Btn size="sm" onClick={testAll} disabled={!value.length}>Test all</Btn></div>
       <div className="candidates">
         {value.map((c, i) => (
-          <div className="candidate" key={i}>
+          <div className="candidate" key={i} data-testid="selector-candidate">
             <span className="faint tiny">{i + 1}</span>
             <span className="row gap-4">
               <Select value={c.kind} onChange={(e) => update(i, { kind: e.target.value as SelectorCandidate['kind'] })} title="selector kind">
                 <option value="css">css</option><option value="xpath">xpath</option><option value="text">text</option><option value="role">role</option><option value="auto">auto</option>
               </Select>
-              <Input full mono value={c.value} onChange={(e) => update(i, { value: e.target.value })} title={c.note} />
+              <Input full mono value={c.value} onChange={(e) => update(i, { value: e.target.value })} title={c.note} data-testid={`selector-input-${i}`} />
             </span>
-            <span className="tiny faint" title={counts[i]?.samples.join('\n')}>{counts[i] ? `${counts[i].count}×` : c.score !== undefined ? `s${c.score.toFixed(2)}` : ''}</span>
+            <span className="tiny faint" title={counts[i]?.samples.join('\n')} data-testid={`selector-count-${i}`}>{counts[i] ? `${counts[i].count}×` : c.score !== undefined ? `s${c.score.toFixed(2)}` : ''}</span>
             <span className="row gap-4">
-              <Btn size="sm" onClick={() => test(i)} title="highlight matches in the browser">Test</Btn>
+              <Btn size="sm" onClick={() => test(i)} title="highlight matches in the browser" data-testid={`selector-test-${i}`}>Test</Btn>
               <Btn size="sm" variant="ghost" disabled={i === 0} onClick={() => { const v = value.slice(); const [x] = v.splice(i, 1); v.unshift(x); onChange(v); }} title="make primary">↑</Btn>
-              <Btn size="sm" variant="ghost" disabled={value.length <= 1} onClick={() => onChange(value.filter((_, j) => j !== i))} title="remove">✕</Btn>
+              <Btn size="sm" variant="ghost" disabled={value.length <= 1} onClick={() => onChange(value.filter((_, j) => j !== i))} title="remove" data-testid={`selector-remove-${i}`}>✕</Btn>
             </span>
           </div>
         ))}
       </div>
-      <div><Btn size="sm" onClick={() => onChange([...value, { kind: 'css', value: '' }])}>+ candidate</Btn></div>
+      <div><Btn size="sm" onClick={() => onChange([...value, { kind: 'css', value: '' }])} data-testid="selector-add">+ candidate</Btn></div>
     </div>
   );
 }
@@ -60,8 +61,8 @@ export function FieldEditor({ field, onChange, scope, children }: { field: Field
   return (
     <div className="col">
       <div className="row">
-        <Input className="grow" value={field.name} onChange={(e) => set({ name: e.target.value })} onBlur={(e) => set({ name: slugName(e.target.value) })} placeholder="field name" />
-        <Select value={field.type} onChange={(e) => set({ type: e.target.value as Field['type'] })}>{FIELD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</Select>
+        <Input className="grow" value={field.name} onChange={(e) => set({ name: e.target.value })} onBlur={(e) => set({ name: slugName(e.target.value) })} placeholder="field name" data-testid="field-name" />
+        <Select value={field.type} onChange={(e) => set({ type: e.target.value as Field['type'] })} data-testid="field-type">{FIELD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</Select>
       </div>
       {field.type === 'attr' && <FieldRow label="Attribute"><Input mono value={field.attr ?? ''} onChange={(e) => set({ attr: e.target.value })} placeholder="data-id" /></FieldRow>}
       {field.type === 'regex' && (
@@ -99,6 +100,43 @@ export function FieldEditor({ field, onChange, scope, children }: { field: Field
 }
 
 // ---------- list ----------
+
+/** css by default; xpath when the text starts like one ("//div", "./li", "(//a)[1]") */
+function selectorKindOf(value: string): SelectorCandidate['kind'] {
+  return /^(\/|\.\/|\(\/)/.test(value.trim()) ? 'xpath' : 'css';
+}
+
+/**
+ * "Set list selector manually": a fallback for pages where auto-detection fails. Test highlights
+ * the matches in the recorder browser and shows the count; Use applies it as the record selector.
+ */
+export function ManualListSelector({ onApply, initial = '', label = 'Set list selector manually' }: { onApply: (selector: SelectorCandidate[]) => void; initial?: string; label?: string }) {
+  const toast = useToast();
+  const [value, setValue] = useState(initial);
+  const [result, setResult] = useState<{ count: number; samples: string[] } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const candidate = (): SelectorCandidate => ({ kind: selectorKindOf(value), value: value.trim() });
+  const test = async () => {
+    if (!value.trim()) return;
+    setBusy(true);
+    try {
+      const r = await invoke('recorder.highlight', [candidate()]);
+      setResult({ count: r.count, samples: r.samples });
+    } catch (e) { toast((e as Error).message, 'error'); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="col gap-4" data-testid="list-selector-manual">
+      <span className="muted small">{label}</span>
+      <div className="row">
+        <Input className="grow" mono value={value} placeholder="css or xpath matching every record, e.g. article.product" onChange={(e) => { setValue(e.target.value); setResult(null); }} onKeyDown={(e) => { if (e.key === 'Enter') void test(); }} data-testid="list-selector-input" />
+        <Btn size="sm" onClick={() => void test()} disabled={!value.trim() || busy} title="highlight the matches in the browser" data-testid="list-selector-test">Test</Btn>
+        <Btn size="sm" variant="primary" onClick={() => value.trim() && onApply([candidate()])} disabled={!value.trim()} data-testid="list-selector-apply">Use as list</Btn>
+      </div>
+      {result && <div className="tiny faint" data-testid="list-selector-count" data-count={result.count}>{result.count} match(es){result.samples[0] ? ` — ${truncate(result.samples[0], 60)}` : ''}</div>}
+    </div>
+  );
+}
 
 export function ListEditor({ list, onChange, onClear, onDetect }: { list: ListSpec; onChange: (l: ListSpec) => void; onClear: () => void; onDetect: () => void }) {
   return (
@@ -200,19 +238,19 @@ export function PaginationEditor({ pagination, onChange }: { pagination: Paginat
   return (
     <div className="col">
       <div className="row"><h3 className="grow">Pagination</h3>
-        <Select value={pagination?.type ?? ''} onChange={(e) => (e.target.value ? switchKind(e.target.value as Pagination['type']) : onChange(undefined))}>
+        <Select value={pagination?.type ?? ''} onChange={(e) => (e.target.value ? switchKind(e.target.value as Pagination['type']) : onChange(undefined))} data-testid="pagination-type">
           <option value="">none</option>{kinds.map((k) => <option key={k} value={k}>{k}</option>)}
         </Select>
       </div>
       {!pagination && <div className="muted small">No pagination. Pick a "next" link or "load more" button in the browser, or choose a type above.</div>}
       {pagination && 'selector' in pagination && pagination.selector && <SelectorEditor value={pagination.selector} onChange={(selector) => set({ selector })} label={pagination.type === 'scroll' ? 'Scroll container (optional)' : 'Selector'} />}
       {pagination?.type === 'scroll' && !pagination.selector && <div><Btn size="sm" onClick={() => set({ selector: [{ kind: 'css', value: '' }] })}>+ scroll container selector</Btn></div>}
-      {pagination?.type === 'next' && <div className="row wrap gap-12"><span className="row gap-4"><span className="muted small">max pages</span><Input type="number" style={{ width: 64 }} value={pagination.maxPages} onChange={(e) => set({ maxPages: Number(e.target.value) })} /></span><span className="row gap-4"><span className="muted small">method</span><Select value={pagination.method} onChange={(e) => set({ method: e.target.value })}><option value="auto">auto</option><option value="href">href (HTTP)</option><option value="click">click (JS)</option></Select></span><Check label="stop when no new rows" checked={pagination.stopWhenNoNewRows} onChange={(v) => set({ stopWhenNoNewRows: v })} /></div>}
+      {pagination?.type === 'next' && <div className="row wrap gap-12"><span className="row gap-4"><span className="muted small">max pages</span><Input type="number" style={{ width: 64 }} value={pagination.maxPages} onChange={(e) => set({ maxPages: Number(e.target.value) })} data-testid="pagination-max-pages" /></span><span className="row gap-4"><span className="muted small">method</span><Select value={pagination.method} onChange={(e) => set({ method: e.target.value })} data-testid="pagination-method"><option value="auto">auto</option><option value="href">href (HTTP)</option><option value="click">click (JS)</option></Select></span><Check label="stop when no new rows" checked={pagination.stopWhenNoNewRows} onChange={(v) => set({ stopWhenNoNewRows: v })} /></div>}
       {pagination?.type === 'loadMore' && <div className="row wrap gap-12"><span className="row gap-4"><span className="muted small">max clicks</span><Input type="number" style={{ width: 64 }} value={pagination.maxClicks} onChange={(e) => set({ maxClicks: Number(e.target.value) })} /></span><span className="row gap-4"><span className="muted small">delay ms</span><Input type="number" style={{ width: 72 }} value={pagination.delayMs} onChange={(e) => set({ delayMs: Number(e.target.value) })} /></span><Check label="stop when no new rows" checked={pagination.stopWhenNoNewRows} onChange={(v) => set({ stopWhenNoNewRows: v })} /></div>}
       {pagination?.type === 'scroll' && <div className="row wrap gap-12"><span className="row gap-4"><span className="muted small">max scrolls</span><Input type="number" style={{ width: 64 }} value={pagination.maxScrolls} onChange={(e) => set({ maxScrolls: Number(e.target.value) })} /></span><span className="row gap-4"><span className="muted small">delay ms</span><Input type="number" style={{ width: 72 }} value={pagination.delayMs} onChange={(e) => set({ delayMs: Number(e.target.value) })} /></span><Check label="stop when no new rows" checked={pagination.stopWhenNoNewRows} onChange={(v) => set({ stopWhenNoNewRows: v })} /></div>}
-      {pagination?.type === 'urlPattern' && <><FieldRow label="URL template" hint="{{page}} is replaced by the page number"><Input full mono value={pagination.template} onChange={(e) => set({ template: e.target.value })} /></FieldRow><div className="row wrap gap-12"><span className="row gap-4"><span className="muted small">start</span><Input type="number" style={{ width: 56 }} value={pagination.start} onChange={(e) => set({ start: Number(e.target.value) })} /></span><span className="row gap-4"><span className="muted small">step</span><Input type="number" style={{ width: 56 }} value={pagination.step} onChange={(e) => set({ step: Number(e.target.value) })} /></span><span className="row gap-4"><span className="muted small">max pages</span><Input type="number" style={{ width: 64 }} value={pagination.maxPages} onChange={(e) => set({ maxPages: Number(e.target.value) })} /></span></div></>}
+      {pagination?.type === 'urlPattern' && <><FieldRow label="URL template" hint="{{page}} is replaced by the page number"><Input full mono value={pagination.template} onChange={(e) => set({ template: e.target.value })} data-testid="pagination-template" /></FieldRow><div className="row wrap gap-12"><span className="row gap-4"><span className="muted small">start</span><Input type="number" style={{ width: 56 }} value={pagination.start} onChange={(e) => set({ start: Number(e.target.value) })} /></span><span className="row gap-4"><span className="muted small">step</span><Input type="number" style={{ width: 56 }} value={pagination.step} onChange={(e) => set({ step: Number(e.target.value) })} /></span><span className="row gap-4"><span className="muted small">max pages</span><Input type="number" style={{ width: 64 }} value={pagination.maxPages} onChange={(e) => set({ maxPages: Number(e.target.value) })} data-testid="pagination-max-pages" /></span></div></>}
       {pagination?.type === 'urlList' && <FieldRow label="URLs" stack><Textarea full value={pagination.urls.join('\n')} onChange={(e) => set({ urls: e.target.value.split('\n').map((s) => s.trim()).filter(Boolean) })} /></FieldRow>}
-      {pagination?.type === 'pageLinks' && <FieldRow label="Max pages"><Input type="number" style={{ width: 64 }} value={pagination.maxPages} onChange={(e) => set({ maxPages: Number(e.target.value) })} /></FieldRow>}
+      {pagination?.type === 'pageLinks' && <FieldRow label="Max pages"><Input type="number" style={{ width: 64 }} value={pagination.maxPages} onChange={(e) => set({ maxPages: Number(e.target.value) })} data-testid="pagination-max-pages" /></FieldRow>}
       {pagination?.type === 'script' && <><FieldRow label="JS code" stack hint="return true when a next page was loaded"><Textarea full value={pagination.code} onChange={(e) => set({ code: e.target.value })} /></FieldRow><div className="row gap-12"><span className="row gap-4"><span className="muted small">max pages</span><Input type="number" style={{ width: 64 }} value={pagination.maxPages} onChange={(e) => set({ maxPages: Number(e.target.value) })} /></span><span className="row gap-4"><span className="muted small">delay ms</span><Input type="number" style={{ width: 72 }} value={pagination.delayMs} onChange={(e) => set({ delayMs: Number(e.target.value) })} /></span></div></>}
     </div>
   );

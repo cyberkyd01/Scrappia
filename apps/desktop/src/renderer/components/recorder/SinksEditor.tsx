@@ -11,7 +11,7 @@ export function SinksEditor({ sinks, onChange, recipeName, secrets }: { sinks: S
   const update = (i: number, s: Sink) => onChange(sinks.map((x, j) => (j === i ? s : x)));
   return (
     <div className="col">
-      <div className="row"><span className="muted small">Add output</span><Select value={addType} onChange={(e) => setAddType(e.target.value as Sink['type'])}>{SINK_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</Select><Btn size="sm" onClick={() => onChange([...sinks, blankSink(addType, recipeName.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'export')])}>+ add</Btn></div>
+      <div className="row"><span className="muted small">Add output</span><Select value={addType} onChange={(e) => setAddType(e.target.value as Sink['type'])} data-testid="sinks-add-type">{SINK_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</Select><Btn size="sm" onClick={() => onChange([...sinks, blankSink(addType, recipeName.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'export')])} data-testid="sinks-add">+ add</Btn></div>
       {sinks.length === 0 && <div className="faint small">No outputs configured: rows are stored in the local database and can be exported later from the run page.</div>}
       {sinks.map((s, i) => (
         <div className="card" key={i}>
@@ -32,7 +32,7 @@ function SinkForm({ sink: s, onChange, secrets }: { sink: Sink; onChange: (s: Si
   const set = (patch: Record<string, unknown>) => onChange({ ...s, ...patch } as Sink);
   const pathRow = 'path' in s ? (
     <FieldRow label="Path" hint="relative paths resolve under the output directory; {{run}} / {{date}} tokens allowed">
-      <span className="row"><Input full mono value={s.path} onChange={(e) => set({ path: e.target.value })} /><Btn size="sm" onClick={async () => { const p = await invoke('dialogs.save', { defaultPath: s.path }); if (p) set({ path: p }); }}>…</Btn></span>
+      <span className="row"><Input full mono value={s.path} onChange={(e) => set({ path: e.target.value })} data-testid="sink-path" /><Btn size="sm" onClick={async () => { const p = await invoke('dialogs.save', { defaultPath: s.path }); if (p) set({ path: p }); }}>…</Btn></span>
     </FieldRow>
   ) : null;
   const refInput = (key: string, value: string | undefined, label: string) => (

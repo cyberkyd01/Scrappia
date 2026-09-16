@@ -42,6 +42,7 @@ src/main/recorder.ts   RecorderSession: headed patchright Chromium with the insp
 src/main/copilot.ts    RecorderCopilotHost (core CopilotHost over the recorder) + CopilotManager (session, log, pick forwarding)
 src/main/inspector.ts  loads @scrappia/inspector's bundle (falls back to a stub overlay)
 scripts/e2e-copilot.mjs end-to-end test of the copilot in the built app (plain node, see "Copilot")
+scripts/e2e-manual.mjs  end-to-end test of the manual point-and-click path (plain node, see "End-to-end tests")
 src/preload/index.ts   contextBridge -> window.scrappia { invoke, on } (channel allow-list)
 src/renderer/          React UI: views (Home, Recorder, RunMonitor, Settings), recipe reducer, editors
 ```
@@ -74,6 +75,9 @@ goes through the `app.validateRecipe` IPC call).
    *Test run (5 pages)* starts a `dryRun` with `maxRequests: 5` through the real engine and streams rows.
 6. **Save / Run**: recipes are validated with core's zod schema (via IPC), saved to storage
    (versioned), scheduled when they carry a `schedule`, and runs stream `RunEvent`s to the run monitor.
+   Runs started from the desktop carry the recorder browser's cookies and user agent
+   (`src/main/session.ts`) so a headless run sees the same site state as the recorder. Monitor alerts
+   (recipe settings > Monitor, `desktop` channel) are listed on the home page with an unread badge.
 
 ## Copilot
 
@@ -122,6 +126,30 @@ monitor with rows > 0 and the copilot's final summary after returning to the rec
 scenario checks the "no AI provider" empty state. `--no-ai` runs only that scenario, `--keep` keeps the
 temp directories. Environment hooks used by the harness: `SCRAPPIA_USER_DATA` (Electron userData
 directory, applied before the single-instance lock) and `SCRAPPIA_RECORDER_CDP_PORT`.
+
+## End-to-end tests
+
+Both scripts are plain Node (not vitest) and need core, inspector and the desktop app built plus
+patchright's Chromium installed. They launch the built Electron app with `--remote-debugging-port`
+in a throw-away userData directory (so an already running Scrappia window is not touched), drive the
+UI with patchright over CDP and perform **real clicks** in the recorder browser, which is reached
+through its own CDP port. Environment hooks used by the harnesses: `SCRAPPIA_USER_DATA` (Electron
+userData directory, applied before the single-instance lock), `SCRAPPIA_RECORDER_CDP_PORT` (the
+recorder Chromium's remote debugging port) and `SCRAPPIA_E2E_DIALOGS` (JSON `{ open?, save?, directory? }`
+returned instead of showing native file dialogs).
+
+- `node apps/desktop/scripts/e2e-copilot.mjs` — the copilot flow with a scripted mock LLM (see "Copilot").
+- `node apps/desktop/scripts/e2e-manual.mjs` — the manual path against core's fixture site
+  (`packages/core/dist/test/fixtureSite.js`): New recipe -> recorder -> Pick list / Set as list -> data
+  preview -> next-page pagination with max pages -> test run (stats, log, tab counter) -> page links and
+  URL-pattern pagination -> load more / infinite scroll / JS "next" button -> detail-page follow with
+  merged fields -> keyword lists -> CSV sink, save, full run, run monitor, exports, run history, xlsx
+  export -> Import JSON and the templates gallery -> JSON tab validation, engine tab, Copy CLI ->
+  Settings (providers, secrets, defaults, browsers) -> monitor alerts on the home page -> robustness
+  (disabled Test run, pick modes with a closed browser, Escape, hand-closed browser window, 404 entry
+  URL, 503 bot wall with browser fallback). Flags: `--live` adds a live Amazon search scenario (network),
+  `--keep` keeps the temp directories, `--only=4,5` runs selected steps. Every step asserts DOM state
+  (via `data-testid`s), the recipe JSON and run results fetched through IPC (`window.scrappia.invoke`).
 
 ## Troubleshooting
 

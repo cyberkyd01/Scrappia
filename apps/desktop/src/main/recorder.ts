@@ -83,7 +83,7 @@ export class RecorderSession {
   private attach(page: Page) {
     this.page = page;
     this.overlayReady = false;
-    page.on('framenavigated', (f) => { if (f === page.mainFrame()) { this.overlayReady = false; this.opts.onMessage({ type: 'navigated', url: f.url() }); this.pushStatus(); } });
+    page.on('framenavigated', (f) => { if (f === page.mainFrame()) { this.overlayReady = false; this.opts.onMessage({ type: 'navigated', url: f.url() }); this.pushStatus(); void this.syncOverlay(page); } });
     page.on('domcontentloaded', () => { void this.applyMode(); });
     page.on('load', () => { void this.applyMode(); this.pushStatus(); });
     page.on('close', () => {
@@ -95,8 +95,23 @@ export class RecorderSession {
     this.pushStatus();
   }
 
+  /**
+   * Back/forward navigations are restored from the bfcache: the init script does not run again and
+   * no load event fires, so the overlay never re-announces itself although it is still there. Probe
+   * for it once the document is available and re-apply the picking mode.
+   */
+  private async syncOverlay(page: Page) {
+    await page.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => undefined);
+    if (this.page !== page || !this.isOpen || this.overlayReady) return;
+    const present = await page.evaluate((g) => typeof (window as unknown as Record<string, { setMode?: unknown }>)[g]?.setMode === 'function', INSPECTOR_GLOBAL, {}, false).catch(() => false);
+    if (present && !this.overlayReady && this.page === page) { this.overlayReady = true; await this.applyMode(); this.pushStatus(); }
+  }
+
   private onOverlayMessage(msg: OverlayMessage) {
     if (msg.type === 'ready') { this.overlayReady = true; void this.applyMode(); this.pushStatus(); }
+    // Escape in the page switches the overlay off by itself; mirror that here so the mode buttons in
+    // the app agree and the next navigation does not silently re-enable picking.
+    if (msg.type === 'log' && /mode set to off/i.test(msg.message) && this.mode !== 'off') { this.mode = 'off'; this.pushStatus(); }
     this.opts.onMessage(msg);
   }
 
@@ -153,6 +168,14 @@ export class RecorderSession {
   }
 
   currentUrl(): string { return this.isOpen ? this.page!.url() : ''; }
+
+  /** Cookies + user agent of the recorder browser, so runs see the same site state (logins, consent, region). */
+  async sessionState(): Promise<{ cookies: Array<{ name: string; value: string; domain: string; path: string }>; userAgent?: string } | null> {
+    if (!this.isOpen) return null;
+    const cookies = await this.handle!.context.cookies().catch(() => []);
+    const userAgent = await this.page!.evaluate(() => navigator.userAgent).catch(() => undefined);
+    return { cookies: cookies.filter((c) => c.domain).map((c) => ({ name: c.name, value: c.value, domain: c.domain, path: c.path || '/' })), userAgent };
+  }
 
   // ---------- overlay API ----------
 

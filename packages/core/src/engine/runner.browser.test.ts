@@ -107,6 +107,20 @@ describe('Runner (browser mode)', () => {
     expect(page!.data.title).toBe('n=2');
   });
 
+  it('a "next" button without a link is clicked in-page (auto method), even from auto engine mode', async () => {
+    const storage = new SqliteStorage();
+    const recipe: RecipeInput = {
+      name: 'jsnext', entry: { urls: [`${site.url}/jsnext`], template: 't' }, engine: { ...engine, mode: 'auto' },
+      templates: { t: { list: { selector: [{ value: '.row' }], fields: [{ name: 'row', selector: [{ value: ':scope' }] }] }, pagination: { type: 'next', selector: [{ value: '#next' }] } } },
+    };
+    const { run, stats } = await new Runner({ recipe: parseRecipe(recipe), storage, outDir, logger: quiet }).start();
+    expect(run.status).toBe('succeeded');
+    expect(stats.rows).toBe(6);
+    expect(stats.browserFetches).toBe(1);
+    expect(stats.requests.total).toBe(1);
+    expect(Array.from(storage.iterRows(run.id)).map((r) => r.data.row).sort()).toEqual(['A1', 'A2', 'B1', 'B2', 'C1', 'C2']);
+  });
+
   it('screenshot and image fields produce files', async () => {
     const storage = new SqliteStorage();
     const recipe: RecipeInput = {

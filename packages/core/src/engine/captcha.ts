@@ -169,6 +169,8 @@ export function looksBlocked(html: string, status?: number): string | null {
   if (/cf-browser-verification|_cf_chl_opt|challenge-platform|Just a moment\.\.\.|Checking your browser before accessing/i.test(html)) return 'cloudflare-challenge';
   if (/px-captcha|perimeterx/i.test(html) && /captcha|blocked|access denied/i.test(html)) return 'perimeterx';
   if (/datadome/i.test(html) && /captcha/i.test(html)) return 'datadome';
-  if (/<title>\s*(Access Denied|Blocked|Bot Detected|Are you a robot|Pardon Our Interruption)/i.test(html)) return 'block-page';
+  if (/<title>\s*(Access Denied|Blocked|Bot Detected|Are you a robot|Pardon Our Interruption|Robot Check|Sorry! Something went wrong)/i.test(html)) return 'block-page';
+  // Amazon, Google and similar "are you a human" interstitials
+  if (/Enter the characters you see below|automated access to .{0,40}data|unusual traffic from your (computer|network)|verify (that )?you are (a )?human|Type the characters you see/i.test(html)) return 'bot-check';
   return null;
 }

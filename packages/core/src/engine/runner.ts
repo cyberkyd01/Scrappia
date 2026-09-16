@@ -66,6 +66,7 @@ export class Runner {
   private fallbackReported = new Set<string>();
   private sessionCounter = 0;
   private blockedStreak = new Map<string, number>();
+  private browserHosts = new Set<string>();
   private outDir: string;
   private lastProgress = 0;
   private startedAt = Date.now();
@@ -81,9 +82,15 @@ export class Runner {
     this.limiter = new KeyedLimiter(e.perHostConcurrency, e.delayMs, e.jitterMs);
     const proxyUrls = e.proxy.urls.length ? e.proxy.urls : e.proxy.pool ? (opts.secrets?.(e.proxy.pool)?.split(/[\n,]/).map((s) => s.trim()).filter(Boolean) ?? []) : [];
     this.proxies = new ProxyPool(proxyUrls, { rotate: e.proxy.rotate, maxErrors: e.proxy.maxErrors });
+    // recipe cookies apply to HTTP fetches as well as to browser contexts
+    for (const c of e.cookies) if (c.domain) this.cookies.set(`https://${c.domain.replace(/^\./, '')}/`, c.name, c.value);
     this.browsers = new BrowserPool(e, this.proxies, this.log, { provider: opts.browserProvider, profilesDir: join(this.outDir, 'profiles'), headless: opts.headless });
     if (e.respectRobots) this.robots = new RobotsCache(e.userAgent ?? 'Scrappia');
     if (opts.onEvent) this.listeners.add(opts.onEvent);
+    // engine warnings/errors (retries, blocks, merge problems) are part of the run's story: surface them as events
+    this.log.on((entry) => {
+      if ((entry.level === 'warn' || entry.level === 'error') && this.run) this.emit({ type: 'log', runId: this.run.id, level: entry.level, msg: entry.msg, data: entry.data });
+    });
     if (opts.signal) opts.signal.addEventListener('abort', () => this.cancel(), { once: true });
     this.stats = { requests: { total: 0, done: 0, failed: 0, pending: 0, running: 0, skipped: 0 }, rows: 0, rowsByDataset: {}, pages: 0, bytes: 0, httpFetches: 0, browserFetches: 0, drift: 0, healed: 0, validationFlags: 0, validationDrops: 0, startedAt: Date.now(), elapsedMs: 0, rowsPerMinute: 0, aiCalls: 0, aiTokens: 0 };
   }
@@ -219,25 +226,37 @@ export class Runner {
     const started = Date.now();
     const sessionId = `s${(this.sessionCounter++ % this.recipe.engine.concurrency)}`;
     let mode: 'http' | 'browser' = this.decideMode(template);
+    // hosts that already needed the browser in this run skip the HTTP attempt
+    if (mode === 'http' && this.recipe.engine.mode === 'auto' && this.browserHosts.has(host)) mode = 'browser';
     this.emit({ type: 'request.start', runId: this.run.id, request: req, mode });
     try {
-      let result: PageResult;
+      let result: PageResult | undefined;
+      let httpError: Error | undefined;
       try {
         result = await this.fetchPage(req, template, mode, sessionId);
+      } catch (e) {
+        // In auto mode an HTTP failure (5xx, 403/429, network error) is a reason to try the browser, not to give up.
+        if (mode === 'http' && this.recipe.engine.mode === 'auto' && !this.abort.signal.aborted && (e as Error).name !== 'AbortError') httpError = e as Error;
+        else throw e;
       } finally { release(); }
 
       // auto mode: upgrade to browser when HTTP clearly did not work
       if (mode === 'http' && this.recipe.engine.mode === 'auto') {
-        const listEmpty = !!template.list && result.extract.listMatch?.matched === 0;
-        const pageEmpty = !template.list && template.fields.length > 0 && Object.values(result.extract.page).every((v) => v == null || v === '');
-        if (result.browserRequired || result.blocked || listEmpty || pageEmpty) {
-          this.log.info('http fetch insufficient, retrying in browser', { url: req.url, reason: result.browserRequired ?? result.blocked ?? (listEmpty ? 'list-empty' : 'fields-empty') });
+        const listEmpty = !!result && !!template.list && result.extract.listMatch?.matched === 0;
+        const pageEmpty = !!result && !template.list && template.fields.length > 0 && Object.values(result.extract.page).every((v) => v == null || v === '');
+        const definitive = result?.httpStatus === 404 || result?.httpStatus === 410; // a missing page stays missing in a browser
+        const reason = httpError ? `http-error: ${httpError.message}` : result?.browserRequired ?? result?.blocked ?? (!definitive && listEmpty ? 'list-empty' : !definitive && pageEmpty ? 'fields-empty' : undefined);
+        if (reason) {
+          this.log.info('http fetch insufficient, retrying in browser', { url: req.url, reason });
+          this.browserHosts.add(host);
           mode = 'browser';
+          this.emit({ type: 'log', runId: this.run.id, level: 'info', msg: `Switching to browser for ${host} (${reason})` });
           const rel2 = await this.limiter.acquire(host, this.abort.signal).catch(() => null);
           if (!rel2) throw new AbortError();
           try { result = await this.fetchPage(req, template, 'browser', sessionId); } finally { rel2(); }
         }
       }
+      if (!result) throw httpError ?? new Error('fetch produced no result');
       if (result.blocked) {
         const streak = (this.blockedStreak.get(host) ?? 0) + 1;
         this.blockedStreak.set(host, streak);

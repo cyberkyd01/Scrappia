@@ -63,6 +63,12 @@ export function startFixtureSite(port = 0): Promise<{ server: Server; url: strin
     if (path === '/loadmore') return send(layout('Load more', `<div id="list"><div class="row">Row 1</div><div class="row">Row 2</div></div><button id="more">Load more</button><script>
       let n = 2; document.getElementById('more').addEventListener('click', () => { for (let i = 0; i < 2; i++) { n++; const d = document.createElement('div'); d.className = 'row'; d.textContent = 'Row ' + n; document.getElementById('list').appendChild(d); } if (n >= 8) document.getElementById('more').remove(); });
     </script>`));
+    if (path === '/jsnext') return send(layout('JS next', `<div id="list"></div><button id="next">Next</button><script>
+      const pages = [['A1','A2'],['B1','B2'],['C1','C2']]; let i = 0;
+      const render = () => { document.getElementById('list').innerHTML = pages[i].map(t => '<div class="row">' + t + '</div>').join(''); document.getElementById('next').disabled = i >= pages.length - 1; };
+      document.getElementById('next').addEventListener('click', () => { if (i < pages.length - 1) { i++; setTimeout(render, 100); } });
+      render();
+    </script>`));
     if (path === '/scroll') return send(layout('Scroll', `<div id="list">${Array.from({ length: 10 }, (_, i) => `<div class="row" style="height:300px">Row ${i + 1}</div>`).join('')}</div><script>
       let n = 10; window.addEventListener('scroll', () => { if (window.innerHeight + window.scrollY >= document.body.scrollHeight - 50 && n < 30) { for (let i = 0; i < 10; i++) { n++; const d = document.createElement('div'); d.className = 'row'; d.style.height = '300px'; d.textContent = 'Row ' + n; document.getElementById('list').appendChild(d); } } });
     </script>`));
@@ -85,6 +91,8 @@ export function startFixtureSite(port = 0): Promise<{ server: Server; url: strin
     }
     if (path === '/blocked') return send('<html><head><title>Just a moment...</title></head><body><div id="cf-browser-verification">Checking your browser</div></body></html>', 503);
     if (path === '/flaky') { const n = hits.filter((h) => h === '/flaky').length; return n < 3 ? send('boom', 500) : send(layout('OK', '<p class="ok">finally</p>')); }
+    // "bot wall": the first hit of each botwall URL is rejected with 503 (like Amazon throttling plain HTTP clients)
+    if (path.startsWith('/botwall')) { const n = hits.filter((h) => h === path).length; return n < 2 ? send('<html><title>Sorry! Something went wrong!</title><body>Enter the characters you see below</body></html>', 503) : send(layout('Wall', `<div class="item">passed ${path}</div>`)); }
     if (path === '/redirect') { res.writeHead(302, { location: '/products?page=2' }); return res.end(); }
     if (path === '/robots.txt') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('User-agent: *\nDisallow: /secret\n'); }
     if (path.startsWith('/img/')) { res.writeHead(200, { 'content-type': 'image/jpeg' }); return res.end(Buffer.from([0xff, 0xd8, 0xff, 0xd9])); }

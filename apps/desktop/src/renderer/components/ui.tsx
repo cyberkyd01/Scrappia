@@ -18,10 +18,10 @@ export function Textarea({ className = '', full, ...rest }: TextareaHTMLAttribut
   return <textarea className={['textarea', full ? 'full' : '', className].filter(Boolean).join(' ')} {...rest} />;
 }
 
-export function Check({ label, checked, onChange, disabled }: { label: ReactNode; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+export function Check({ label, checked, onChange, disabled, testId }: { label: ReactNode; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean; testId?: string }) {
   return (
     <label className="checkbox">
-      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} data-testid={testId} />
       <span>{label}</span>
     </label>
   );
@@ -52,7 +52,7 @@ export function Chip({ children, onRemove, onClick, title }: { children: ReactNo
 export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: Array<{ id: T; label: ReactNode }>; value: T; onChange: (t: T) => void }) {
   return (
     <div className="tabs">
-      {tabs.map((t) => <button type="button" key={t.id} className={`tab${t.id === value ? ' active' : ''}`} onClick={() => onChange(t.id)}>{t.label}</button>)}
+      {tabs.map((t) => <button type="button" key={t.id} className={`tab${t.id === value ? ' active' : ''}`} onClick={() => onChange(t.id)} data-testid={`tab-${t.id}`}>{t.label}</button>)}
     </div>
   );
 }
@@ -76,8 +76,8 @@ export function Modal({ title, children, onClose, footer, wide }: { title: React
 
 export function Empty({ children }: { children: ReactNode }) { return <div className="empty">{children}</div>; }
 
-export function StatCard({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
-  return <div className="stat"><div className="label">{label}</div><div className="value">{value}</div>{sub && <div className="sub">{sub}</div>}</div>;
+export function StatCard({ label, value, sub, testId }: { label: string; value: ReactNode; sub?: ReactNode; testId?: string }) {
+  return <div className="stat" data-testid={testId}><div className="label">{label}</div><div className="value">{value}</div>{sub && <div className="sub">{sub}</div>}</div>;
 }
 
 /** Prompt modal (replacement for window.prompt, which Electron does not support). */
@@ -108,7 +108,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastCtx.Provider value={value}>
       {children}
-      <div className="toasts">{toasts.map((t) => <div key={t.id} className={`toast ${t.tone ?? ''}`}>{t.text}</div>)}</div>
+      <div className="toasts">{toasts.map((t) => <div key={t.id} className={`toast ${t.tone ?? ''}`} data-testid="toast" data-tone={t.tone ?? 'info'}>{t.text}</div>)}</div>
     </ToastCtx.Provider>
   );
 }

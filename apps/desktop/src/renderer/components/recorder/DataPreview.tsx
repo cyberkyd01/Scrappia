@@ -18,6 +18,8 @@ export function DataPreview({ recipe, templateName, recorderOpen, refreshKey, co
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<'preview' | 'test'>('preview');
   const [testRun, setTestRun] = useState<{ runId: string; status: string; rows: Array<Record<string, unknown>>; stats?: RunStats; error?: string } | null>(null);
+  const [testLog, setTestLog] = useState<Array<{ level: 'info' | 'error'; msg: string }>>([]);
+  const testRunId = useRef<string | undefined>(undefined);
   const timer = useRef<number | undefined>(undefined);
 
   const fieldNames = useMemo(() => [...(template?.list?.fields ?? []), ...(template?.fields ?? [])].map((f) => f.name), [template]);
@@ -39,6 +41,24 @@ export function DataPreview({ recipe, templateName, recorderOpen, refreshKey, co
   }, [refreshKey, refresh, collapsed]);
 
   useIpcEvent('run:event', (e) => {
+    const eventRunId = 'runId' in e ? e.runId : e.run.id;
+    if (eventRunId === testRunId.current) {
+      // keep a short, human-readable trail so a run that produces nothing explains itself
+      if (e.type === 'request.done') {
+        const http = e.httpStatus && e.httpStatus >= 400 ? ` (HTTP ${e.httpStatus}${e.httpStatus === 404 ? ': page not found, check the URL' : e.httpStatus === 403 || e.httpStatus === 429 || e.httpStatus === 503 ? ': the site refused the request' : ''})` : '';
+        const level = e.status === 'failed' || (e.rows === 0 && !!http) ? 'error' as const : 'info' as const;
+        setTestLog((l) => [...l, { level, msg: `${e.mode}${e.httpStatus ? ` ${e.httpStatus}` : ''} ${e.request.url} → ${e.status}, ${e.rows} rows${e.error ? `: ${e.error}` : ''}${http}` }].slice(-8));
+      }
+      else if (e.type === 'log' && e.level !== 'debug') setTestLog((l) => [...l, { level: e.level === 'error' ? 'error' as const : 'info' as const, msg: e.msg }].slice(-8));
+      else if (e.type === 'captcha.needed') setTestLog((l) => [...l, { level: 'error' as const, msg: `CAPTCHA on ${e.url}: solve it in the browser window to continue` }].slice(-8));
+      else if (e.type === 'run.done') {
+        if (e.run.status !== 'succeeded') setTestLog((l) => [...l, { level: 'error' as const, msg: e.run.status === 'failed' ? `Run failed${e.run.error ? `: ${e.run.error}` : ''}` : `Run ${e.run.status}: ${e.stats.requests.failed} request(s) failed, see lines above` }].slice(-8));
+        else if (e.stats.rows === 0) setTestLog((l) => [...l, { level: 'error' as const, msg: 'Run finished without rows: the list/field selectors matched nothing on the fetched page(s)' }].slice(-8));
+        // Streamed rows are a live approximation (detail-page merges re-emit their parent row); the stored rows are authoritative.
+        const id = e.run.id;
+        void invoke('runs.rows', id, undefined, { limit: 500 }).then((rs) => setTestRun((t) => (t && t.runId === id ? { ...t, rows: rs } : t))).catch(() => undefined);
+      }
+    }
     setTestRun((t) => {
       if (!t) return t;
       const id = 'runId' in e ? e.runId : e.run.id;
@@ -55,6 +75,8 @@ export function DataPreview({ recipe, templateName, recorderOpen, refreshKey, co
   const startTest = async () => {
     try {
       const run = await invoke('runs.start', recipe, { dryRun: true, maxRequests: 5, trigger: 'test' });
+      testRunId.current = run.id;
+      setTestLog([]);
       setTestRun({ runId: run.id, status: 'running', rows: [] });
       setTab('test');
     } catch (e) { toast((e as Error).message, 'error'); }
@@ -78,27 +100,32 @@ export function DataPreview({ recipe, templateName, recorderOpen, refreshKey, co
         <button type="button" className="btn ghost sm" onClick={onToggle}>{collapsed ? '▴' : '▾'}</button>
         <span>Data preview</span>
         <div className="btn-group">
-          <Btn size="sm" active={tab === 'preview'} onClick={() => setTab('preview')}>Current page{preview ? ` (${preview.records.length || (Object.keys(preview.page).length ? 1 : 0)})` : ''}</Btn>
-          <Btn size="sm" active={tab === 'test'} onClick={() => setTab('test')}>Test run{testRun ? ` (${testRun.rows.length})` : ''}</Btn>
+          <Btn size="sm" active={tab === 'preview'} onClick={() => setTab('preview')} data-testid="preview-tab">Current page{preview ? ` (${preview.records.length || (Object.keys(preview.page).length ? 1 : 0)})` : ''}</Btn>
+          <Btn size="sm" active={tab === 'test'} onClick={() => setTab('test')} data-testid="test-run-tab">Test run{testRun ? ` (${testRun.rows.length})` : ''}</Btn>
         </div>
-        {tab === 'preview' && preview?.listMatch && <span className="faint tiny">list candidate #{preview.listMatch.candidate + 1}, {preview.listMatch.matched} records</span>}
+        {tab === 'preview' && preview?.listMatch && <span className="faint tiny" data-testid="preview-list-match">list candidate #{preview.listMatch.candidate + 1}, {preview.listMatch.matched} records</span>}
         {tab === 'test' && testRun && (
           <span className="row gap-4 tiny">
-            <Badge tone={testRun.status === 'running' ? 'accent' : testRun.status === 'succeeded' ? 'ok' : testRun.status === 'failed' ? 'danger' : 'warn'}>{testRun.status}</Badge>
-            <span className="faint">{fmtNum(testRun.stats?.pages)} pages · {fmtNum(testRun.stats?.rows)} rows · {testRun.stats?.requests.failed ?? 0} failed</span>
+            <Badge tone={testRun.status === 'running' ? 'accent' : testRun.status === 'succeeded' ? 'ok' : testRun.status === 'failed' ? 'danger' : 'warn'}><span data-testid="test-run-status">{testRun.status}</span></Badge>
+            <span className="faint" data-testid="test-run-stats">{fmtNum(testRun.stats?.pages)} pages · {fmtNum(testRun.stats?.rows)} rows · {testRun.stats?.requests.failed ?? 0} failed</span>
             {testRun.error && <span className="danger">{truncate(testRun.error, 80)}</span>}
           </span>
         )}
         <div className="grow" />
-        {tab === 'preview' && <Btn size="sm" onClick={() => void refresh()} disabled={!recorderOpen || loading || !hasFields}>{loading ? 'Refreshing…' : 'Refresh'}</Btn>}
-        {testRun?.status === 'running' ? <Btn size="sm" variant="danger" onClick={() => void invoke('runs.cancel', testRun.runId)}>Stop</Btn> : <Btn size="sm" onClick={startTest} disabled={!hasFields || recipe.entry.urls.length === 0} title="Dry run: max 5 requests, no exports">Test run (5 pages)</Btn>}
+        {tab === 'preview' && <Btn size="sm" onClick={() => void refresh()} disabled={!recorderOpen || loading || !hasFields} data-testid="preview-refresh">{loading ? 'Refreshing…' : 'Refresh'}</Btn>}
+        {testRun?.status === 'running' ? <Btn size="sm" variant="danger" onClick={() => void invoke('runs.cancel', testRun.runId)} data-testid="test-run-stop">Stop</Btn> : <Btn size="sm" onClick={startTest} disabled={!hasFields || recipe.entry.urls.length === 0} title="Dry run: max 5 requests, no exports" data-testid="test-run-button">Test run (5 pages)</Btn>}
       </div>
+      {!collapsed && tab === 'test' && testLog.length > 0 && (
+        <div className="log tiny" data-testid="test-run-log" style={{ maxHeight: 96, overflow: 'auto', borderBottom: '1px solid var(--border)' }}>
+          {testLog.map((l, i) => <div key={i} className={`line ${l.level}`}>{l.msg}</div>)}
+        </div>
+      )}
       {!collapsed && (
-        <div className="panel-body pad-0">
+        <div className="panel-body pad-0" data-testid={tab === 'preview' ? 'preview-body' : 'test-run-body'}>
           {!hasFields ? <div className="empty">Capture at least one field to see a preview.</div>
             : !recorderOpen && tab === 'preview' ? <div className="empty">Open a page in the recorder browser to preview extraction.</div>
-              : rows.length === 0 ? <div className="empty">{loading ? 'Extracting…' : tab === 'test' && testRun?.status === 'running' ? 'Waiting for rows…' : 'No records matched. Check the list selector and field selectors.'}</div> : (
-                <table className="grid">
+              : rows.length === 0 ? <div className="empty">{loading ? 'Extracting…' : tab === 'test' && testRun?.status === 'running' ? 'Waiting for rows…' : tab === 'test' && testRun ? 'The test run produced no rows. See the log above.' : 'No records matched. Check the list selector and field selectors.'}</div> : (
+                <table className="grid" data-testid={tab === 'preview' ? 'preview-table' : 'test-run-table'}>
                   <thead>
                     <tr>
                       <th className="num">#</th>

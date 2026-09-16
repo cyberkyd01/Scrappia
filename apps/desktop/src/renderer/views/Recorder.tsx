@@ -11,7 +11,7 @@ import { Btn, Input, Badge, Modal, PromptModal, Check, useToast, useAsync } from
 import { recipeReducer, blankRecipe, uniqueTemplateName, paginationFor, makeField, slugName, type FieldTarget } from '../state/recipe';
 import { TemplateTree, type Selection } from '../components/recorder/TemplateTree';
 import { CapturePanel, DetectedListPicker } from '../components/recorder/CapturePanel';
-import { FieldEditor, ListEditor, ActionEditor, PaginationEditor, FollowEditor, TemplateEditor } from '../components/recorder/Editors';
+import { FieldEditor, ListEditor, ManualListSelector, ActionEditor, PaginationEditor, FollowEditor, TemplateEditor } from '../components/recorder/Editors';
 import { DataPreview } from '../components/recorder/DataPreview';
 import { RecipeSettings } from '../components/recorder/RecipeSettings';
 import { CopilotPanel } from '../components/recorder/CopilotPanel';
@@ -174,7 +174,8 @@ export function Recorder({ recipeId: initialId, initialRecipe, initialUrl, copil
   });
   const copyCli = () => {
     const cmd = recipeId ? `scrappia run recipe:${recipeId}` : `scrappia run ./${slugName(recipe.name)}.json`;
-    void navigator.clipboard.writeText(cmd).then(() => toast(`Copied: ${cmd}`, 'ok'));
+    // the clipboard is unavailable when the window is not focused: still show the command
+    void navigator.clipboard.writeText(cmd).then(() => toast(`Copied: ${cmd}`, 'ok'), () => toast(`Clipboard unavailable. Command: ${cmd}`, 'warn'));
   };
   const startRun = () => run(async () => {
     const rec = recipeId && !dirty ? undefined : await validateAndSave({ id: recipeId });
@@ -184,52 +185,52 @@ export function Recorder({ recipeId: initialId, initialRecipe, initialUrl, copil
     go({ name: 'run', runId: r.id });
   });
 
-  const modeBtn = (mode: InspectorMode, label: string) => <Btn size="sm" active={status.open && status.mode === mode} onClick={() => void setMode(mode)}>{label}</Btn>;
+  const modeBtn = (mode: InspectorMode, label: string) => <Btn size="sm" active={status.open && status.mode === mode} onClick={() => void setMode(mode)} data-testid={`mode-${mode}`} data-active={status.open && status.mode === mode ? 'true' : 'false'}>{label}</Btn>;
   const refreshKey = JSON.stringify(template) + status.url;
 
   return (
     <div className="recorder">
       <div className="recorder-top">
         <div className="row">
-          <Btn size="sm" onClick={() => void invoke('recorder.back').then(setStatus)} disabled={!status.open} title="Back">◀</Btn>
-          <Btn size="sm" onClick={() => void invoke('recorder.reload').then(setStatus)} disabled={!status.open} title="Reload">↻</Btn>
-          <Input className="grow" mono value={urlInput} placeholder="https://…" onChange={(e) => setUrlInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void openUrl(urlInput); }} />
-          <Btn size="sm" variant="primary" onClick={() => void openUrl(urlInput)} disabled={!urlInput || busy}>{status.open ? 'Go' : 'Open browser'}</Btn>
-          {status.open && <Btn size="sm" onClick={() => void invoke('recorder.close')} title="Close the recorder browser">Close</Btn>}
-          <span className="faint tiny">{status.open ? (status.overlayReady ? 'overlay ready' : 'overlay loading…') : 'browser closed'}</span>
+          <Btn size="sm" onClick={() => void invoke('recorder.back').then(setStatus)} disabled={!status.open} title="Back" data-testid="recorder-back">◀</Btn>
+          <Btn size="sm" onClick={() => void invoke('recorder.reload').then(setStatus)} disabled={!status.open} title="Reload" data-testid="recorder-reload">↻</Btn>
+          <Input className="grow" mono value={urlInput} placeholder="https://…" onChange={(e) => setUrlInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void openUrl(urlInput); }} data-testid="recorder-url" />
+          <Btn size="sm" variant="primary" onClick={() => void openUrl(urlInput)} disabled={!urlInput || busy} data-testid="recorder-go">{status.open ? 'Go' : 'Open browser'}</Btn>
+          {status.open && <Btn size="sm" onClick={() => void invoke('recorder.close')} title="Close the recorder browser" data-testid="recorder-close">Close</Btn>}
+          <span className="faint tiny" data-testid="recorder-status" data-open={status.open ? 'true' : 'false'} data-overlay={status.overlayReady ? 'ready' : 'loading'}>{status.open ? (status.overlayReady ? 'overlay ready' : 'overlay loading…') : 'browser closed'}</span>
         </div>
         <div className="row wrap">
           <span className="muted small">Mode</span>
           <div className="btn-group">{modeBtn('pick', 'Pick field')}{modeBtn('pickList', 'Pick list')}{modeBtn('pickAction', 'Pick action')}{modeBtn('off', 'Off')}</div>
-          <Btn size="sm" onClick={detectLists} disabled={!status.open}>Auto-detect lists</Btn>
-          <Btn size="sm" onClick={aiSuggestFields} disabled={!status.open || aiBusy}>{aiBusy ? 'Asking AI…' : 'AI suggest'}</Btn>
+          <Btn size="sm" onClick={detectLists} disabled={!status.open} data-testid="recorder-detect-lists">Auto-detect lists</Btn>
+          <Btn size="sm" onClick={aiSuggestFields} disabled={!status.open || aiBusy} data-testid="recorder-ai-suggest">{aiBusy ? 'Asking AI…' : 'AI suggest'}</Btn>
           <Btn size="sm" active={copilotOpen} onClick={toggleCopilot} title="Show or hide the Copilot chat (Ctrl+/ focuses it)" data-testid="copilot-toggle">Copilot</Btn>
           <div className="grow" />
-          <Input value={recipe.name} style={{ width: 180 }} onChange={(e) => dispatchDirty({ type: 'patch', patch: { name: e.target.value } })} title="recipe name" />
-          {dirty && <Badge tone="warn">unsaved</Badge>}
-          <Btn size="sm" onClick={() => setDrawer('settings')}>Settings</Btn>
-          <Btn size="sm" onClick={() => setDrawer('json')}>JSON</Btn>
-          <Btn size="sm" onClick={exportJson}>Export JSON</Btn>
-          <Btn size="sm" onClick={copyCli} title="Copy a CLI command that runs this recipe">Copy CLI</Btn>
-          <Btn size="sm" onClick={() => setSaveAs(true)}>Save as…</Btn>
-          <Btn size="sm" variant="primary" onClick={() => void validateAndSave({ id: recipeId })} disabled={busy}>Save</Btn>
-          <Btn size="sm" variant="primary" onClick={startRun} disabled={busy || recipe.entry.urls.length === 0} title="Save and start a full run">Run ▶</Btn>
+          <Input value={recipe.name} style={{ width: 180 }} onChange={(e) => dispatchDirty({ type: 'patch', patch: { name: e.target.value } })} title="recipe name" data-testid="recorder-name" />
+          {dirty && <Badge tone="warn"><span data-testid="recorder-dirty">unsaved</span></Badge>}
+          <Btn size="sm" onClick={() => setDrawer('settings')} data-testid="recorder-settings">Settings</Btn>
+          <Btn size="sm" onClick={() => setDrawer('json')} data-testid="recorder-json">JSON</Btn>
+          <Btn size="sm" onClick={exportJson} data-testid="recorder-export-json">Export JSON</Btn>
+          <Btn size="sm" onClick={copyCli} title="Copy a CLI command that runs this recipe" data-testid="recorder-copy-cli">Copy CLI</Btn>
+          <Btn size="sm" onClick={() => setSaveAs(true)} data-testid="recorder-save-as">Save as…</Btn>
+          <Btn size="sm" variant="primary" onClick={() => void validateAndSave({ id: recipeId })} disabled={busy} data-testid="recorder-save">Save</Btn>
+          <Btn size="sm" variant="primary" onClick={startRun} disabled={busy || recipe.entry.urls.length === 0} title="Save and start a full run" data-testid="recorder-run">Run ▶</Btn>
         </div>
       </div>
 
       <div className="recorder-mid">
-        <div className="panel">
+        <div className="panel" data-testid="template-tree-panel">
           <div className="panel-head"><span className="grow">Template tree</span><span className="faint tiny">{Object.keys(recipe.templates).length} template(s)</span></div>
           <div className="panel-body">
             <TemplateTree recipe={recipe} current={templateName} selection={selection} onSelect={(s) => { setSelection(s); if (s.kind !== 'pick') setPicked(null); }} onSetCurrent={(n) => { setCurrent(n); setDetected(null); }} onAddTemplate={() => { const name = uniqueTemplateName(recipe, 'template'); dispatchDirty({ type: 'addTemplate', name }); setCurrent(name); setSelection({ kind: 'template', template: name }); }} />
           </div>
         </div>
-        <div className="panel">
+        <div className="panel" data-testid="inspector-panel">
           <div className="panel-head">
-            <span className="grow">{picked ? 'Capture' : selection ? selectionTitle(selection) : 'Inspector'}</span>
-            <Badge>{templateName}</Badge>
+            <span className="grow" data-testid="inspector-title">{picked ? 'Capture' : selection ? selectionTitle(selection) : 'Inspector'}</span>
+            <Badge><span data-testid="current-template">{templateName}</span></Badge>
           </div>
-          <div className="panel-body">
+          <div className="panel-body" data-testid="inspector-body">
             {picked && selection?.kind === 'pick' ? (
               <CapturePanel picked={picked} template={template} onCapture={capture} onSetList={setList} onExpand={(l) => void expand(l)} onFollow={follow} onPagination={setPagination} onAddAction={addAction} onDismiss={() => { setPicked(null); setSelection(null); }} />
             ) : selection?.kind === 'field' && fieldAt(recipe, selection) ? (
@@ -239,7 +240,7 @@ export function Recorder({ recipeId: initialId, initialRecipe, initialUrl, copil
                   <div className="row">
                     <Btn size="sm" onClick={() => dispatchDirty({ type: 'moveField', template: selection.template, target: selection.target, index: selection.index, to: selection.index - 1 })} disabled={selection.index === 0}>Move up</Btn>
                     <Btn size="sm" onClick={() => dispatchDirty({ type: 'moveField', template: selection.template, target: selection.target, index: selection.index, to: selection.index + 1 })}>Move down</Btn>
-                    <Btn size="sm" variant="danger" onClick={() => { dispatchDirty({ type: 'removeField', template: selection.template, target: selection.target, index: selection.index }); setSelection(null); }}>Remove field</Btn>
+                    <Btn size="sm" variant="danger" onClick={() => { dispatchDirty({ type: 'removeField', template: selection.template, target: selection.target, index: selection.index }); setSelection(null); }} data-testid="field-remove">Remove field</Btn>
                   </div>
                 </FieldEditor>
               </div>
@@ -248,7 +249,12 @@ export function Recorder({ recipeId: initialId, initialRecipe, initialUrl, copil
                 {detected && <div className="card"><h4>Detected lists</h4><DetectedListPicker lists={detected} onUse={setList} /></div>}
                 {template.list ? (
                   <ListEditor list={template.list} onChange={(l) => dispatchDirty({ type: 'updateTemplate', name: templateName, patch: { list: l } })} onClear={() => { dispatchDirty({ type: 'clearList', template: templateName }); setSelection(null); }} onDetect={detectLists} />
-                ) : !detected && <div className="muted small">No list on this template. Switch to <b>Pick list</b> mode and click one of the repeating items in the browser, or use <b>Auto-detect lists</b>.</div>}
+                ) : !detected && (
+                  <div className="col">
+                    <div className="muted small">No list on this template. Switch to <b>Pick list</b> mode and click one of the repeating items in the browser, use <b>Auto-detect lists</b>, or type the record selector yourself.</div>
+                    <ManualListSelector onApply={(selector) => setList(selector, [])} />
+                  </div>
+                )}
               </div>
             ) : selection?.kind === 'action' && recipe.templates[selection.template]?.actions[selection.index] ? (
               <ActionEditor action={recipe.templates[selection.template].actions[selection.index]} onChange={(a) => dispatchDirty({ type: 'updateAction', template: selection.template, index: selection.index, action: a })} onTest={() => void testAction(recipe.templates[selection.template].actions[selection.index])} onRemove={() => { dispatchDirty({ type: 'removeAction', template: selection.template, index: selection.index }); setSelection(null); }} />
@@ -268,7 +274,7 @@ export function Recorder({ recipeId: initialId, initialRecipe, initialUrl, copil
                   <p>4. Click a "next" link or "load more" button to set pagination, or a product link to <b>Follow</b> into a detail template.</p>
                   <p>5. Check the <b>Data preview</b> below, then <b>Save</b> and <b>Run</b>.</p>
                 </div>
-                {!status.open && <Btn variant="primary" onClick={() => void openUrl(urlInput || recipe.entry.urls[0] || '')} disabled={!(urlInput || recipe.entry.urls[0])}>Open recorder browser</Btn>}
+                {!status.open && <Btn variant="primary" onClick={() => void openUrl(urlInput || recipe.entry.urls[0] || '')} disabled={!(urlInput || recipe.entry.urls[0])} data-testid="recorder-open-browser">Open recorder browser</Btn>}
                 {status.open && !status.overlayReady && <div className="banner warn small">The inspector overlay is not ready on this page yet. If the page finished loading and this persists, the inspector bundle may not be built (see README).</div>}
               </div>
             )}

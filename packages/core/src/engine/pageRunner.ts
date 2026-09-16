@@ -49,9 +49,13 @@ export async function runHttp(o: HttpRunOptions): Promise<PageResult> {
   const spec = buildSpec(o.template, res.url);
   const extract = extractFromHtml(res.body, res.url, spec);
   const need = looksLikeBrowserRequired(res.body);
+  const probe = extract.probes[PAGINATION_PROBE];
+  const pg = o.template.pagination;
+  // a "next" control that exists but carries no link needs a browser to click it
+  const jsPagination = pg?.type === 'next' && pg.method !== 'href' && !!probe?.exists && probe.hrefs.filter((h) => !/^(javascript:|#$)/i.test(h)).length === 0;
   return {
     url: res.url, mode: 'http', extract, html: res.body, httpStatus: res.status, bytes: res.bytes, steps: 0,
-    nextUrls: extract.probes[PAGINATION_PROBE]?.hrefs ?? [], blocked: blocked ?? undefined, browserRequired: need.required ? need.reason : undefined,
+    nextUrls: probe?.hrefs ?? [], blocked: blocked ?? undefined, browserRequired: need.required ? need.reason : jsPagination ? 'js-pagination' : undefined,
     screenshots: {}, durationMs: Date.now() - start,
   };
 }
@@ -140,7 +144,11 @@ export async function runBrowser(o: BrowserRunOptions): Promise<PageResult> {
   const seen = new Set<string>(result.records.map((r) => hash(r)));
   let steps = 0;
   const p = template.pagination;
-  const inPage = p && (p.type === 'loadMore' || p.type === 'scroll' || p.type === 'script' || (p.type === 'next' && p.method === 'click'));
+  // A "next" control without a usable href (JS pagination button) must be clicked in-page.
+  const nextProbe = result.probes[PAGINATION_PROBE];
+  const jsNext = p?.type === 'next' && p.method === 'auto' && !!nextProbe?.exists && nextProbe.hrefs.filter((h) => !/^(javascript:|#$)/i.test(h) && h !== page.url()).length === 0;
+  if (jsNext) o.onLog?.('next control has no link; paginating by clicking', { selector: p && 'selector' in p ? p.selector[0]?.value : undefined });
+  const inPage = p && (p.type === 'loadMore' || p.type === 'scroll' || p.type === 'script' || (p.type === 'next' && (p.method === 'click' || jsNext)));
   if (inPage && p) {
     // maxPages counts the first page too; clicks/scrolls count steps
     const max = p.type === 'loadMore' ? p.maxClicks : p.type === 'scroll' ? p.maxScrolls : p.maxPages > 0 ? p.maxPages - 1 : -1;
@@ -154,6 +162,7 @@ export async function runBrowser(o: BrowserRunOptions): Promise<PageResult> {
         if (!found) break;
         const btn = found.locator.first();
         if (!(await btn.isVisible().catch(() => false))) break;
+        if (!(await btn.isEnabled().catch(() => true))) break; // disabled "next"/"load more" = last page
         await btn.scrollIntoViewIfNeeded().catch(() => { });
         await btn.click({ timeout: t }).catch(() => { });
         advanced = true;

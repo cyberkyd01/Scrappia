@@ -9,6 +9,8 @@ import type { SelectorCandidate } from '@scrappia/core';
 import { finder } from '@medv/finder';
 import { getCssSelector } from 'css-selector-generator';
 import {
+  FREE_TEXT_ATTRS,
+  MAX_FREE_TEXT_ATTR_LEN,
   SEMANTIC_ATTRS,
   attrValueEscape,
   isSemanticAttr,
@@ -33,6 +35,8 @@ interface RawCandidate {
   value: string;
   base: number;
   note?: string;
+  /** record-relative only: acceptable when the element is the FIRST of several matches (engine semantics for single-value fields) */
+  firstOk?: boolean;
 }
 
 export interface GenerateOptions {
@@ -53,6 +57,30 @@ function countMatches(s: string, re: RegExp): number {
   return m ? m.length : 0;
 }
 
+const ATTR_SELECTOR_RE = /\[([\w-]+)(?:[~|^$*]?=\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|([^\]\s]+)))?\]/g;
+
+/**
+ * Attribute-value stability inside a css selector: free-text values with digits or long prose
+ * ("Go to next page, page 2") are volatile; identifiers with digits (data-sku="SKU-3") are mildly so.
+ * rel="next" and short digit-free labels ("Next") are rewarded.
+ */
+function attrValueAdjustment(value: string): number {
+  let adj = 0;
+  for (const m of value.matchAll(ATTR_SELECTOR_RE)) {
+    const name = m[1].toLowerCase();
+    const v = m[2] ?? m[3] ?? m[4];
+    if (v === undefined) continue;
+    const digits = /\d/.test(v);
+    if (name === 'rel') adj += /^(?:next|prev|previous)$/i.test(v) ? 8 : 0;
+    else if (FREE_TEXT_ATTRS.includes(name)) adj += digits || v.length > MAX_FREE_TEXT_ATTR_LEN ? -25 : 5;
+    else if (/^data-(?:testid|test|test-id|cy|qa)$/.test(name)) adj += 10;
+    else if (name === 'itemprop' || name === 'name') adj += 5;
+    else if (digits) adj -= 6;
+    if (name !== 'rel' && !FREE_TEXT_ATTRS.includes(name) && v.length > MAX_FREE_TEXT_ATTR_LEN) adj -= 10;
+  }
+  return adj;
+}
+
 /** Score a verified-unique candidate: higher is better. */
 export function scoreSelector(kind: SelectorCandidate['kind'], value: string, base: number): number {
   let score = base;
@@ -65,8 +93,7 @@ export function scoreSelector(kind: SelectorCandidate['kind'], value: string, ba
       if (isGeneratedClass(name)) score -= 30;
       else if (isUtilityClass(name)) score -= 8;
     }
-    if (/\[data-(?:testid|test|test-id|cy|qa)=/.test(value)) score += 10;
-    else if (/\[(?:itemprop|name|aria-label)=/.test(value)) score += 5;
+    score += attrValueAdjustment(value);
     if (/^#/.test(value)) score += 5;
   } else if (kind === 'xpath') {
     score -= 10 * countMatches(value, /\[\d+\]/g);
@@ -103,8 +130,15 @@ function semanticAttrNames(el: Element): string[] {
 function attrBase(name: string): number {
   if (/^data-(testid|test|test-id|cy|qa)$/.test(name)) return 95;
   if (name === 'role') return 60;
+  if (name === 'rel') return 88;
   if (SEMANTIC_ATTRS.includes(name)) return 85;
   return 80;
+}
+
+/** Unique single-class candidates ("a.s-pagination-next"): shorter and more stable than the full class list. */
+function singleClassSelectors(el: Element): string[] {
+  const tag = tagOf(el);
+  return stableClasses(el).slice(0, 4).map((c) => `${tag}.${cssEscape(c)}`);
 }
 
 function nthOfTypeIndex(el: Element): number {
@@ -209,7 +243,8 @@ function runCsg(el: Element, root: ParentNode, withNth: boolean): string | null 
       root: root.nodeType === 9 ? null : (root as Element),
       selectors: withNth ? ['id', 'attribute', 'class', 'tag', 'nthchild'] : ['id', 'attribute', 'class', 'tag'],
       blacklist: [csgBlacklist],
-      whitelist: [/^\[data-testid/, /^\[data-test/, /^\[itemprop/, /^\[name=/, /^\[aria-label/],
+      // aria-label deliberately not whitelisted: free-text values are vetted by the blacklist function
+      whitelist: [/^\[data-testid/, /^\[data-test/, /^\[itemprop/, /^\[name=/, /^\[rel=/],
       includeTag: true,
       combineWithinSelector: true,
       combineBetweenSelectors: true,
@@ -246,6 +281,7 @@ export function generateSelectors(el: Element, opts: GenerateOptions = {}): Sele
   }
 
   const cls = classSelector(el);
+  for (const s of singleClassSelectors(el)) raw.push({ kind: 'css', value: s, base: 79, note: 'class' });
   if (cls) raw.push({ kind: 'css', value: cls, base: 78, note: 'class' });
   if (cls && el.parentElement && el.parentElement !== root) {
     const pcls = classSelector(el.parentElement);
@@ -337,8 +373,8 @@ function cheapRelative(el: Element, recordEl: Element): RawCandidate[] {
     if (s) out.push({ kind: 'css', value: s, base: 90, note: a });
   }
   if (classes.length) {
-    out.push({ kind: 'css', value: '.' + cssEscape(classes[0]), base: 85, note: 'class' });
-    out.push({ kind: 'css', value: tag + classes.slice(0, 2).map((c) => '.' + cssEscape(c)).join(''), base: 84, note: 'class' });
+    out.push({ kind: 'css', value: '.' + cssEscape(classes[0]), base: 85, note: 'class', firstOk: true });
+    out.push({ kind: 'css', value: tag + classes.slice(0, 2).map((c) => '.' + cssEscape(c)).join(''), base: 84, note: 'class', firstOk: true });
   }
   out.push({ kind: 'css', value: tag, base: 70, note: 'tag' });
   // parent tag/class > tag
@@ -349,6 +385,19 @@ function cheapRelative(el: Element, recordEl: Element): RawCandidate[] {
     if (pcls.length) out.push({ kind: 'css', value: `.${cssEscape(pcls[0])} ${tag}`, base: 80, note: 'parent class' });
     out.push({ kind: 'css', value: `${ptag} ${tag}`, base: 72, note: 'parent tag' });
     out.push({ kind: 'css', value: `${ptag} > ${tag}`, base: 71, note: 'parent tag' });
+  }
+  // nearest classed ancestors + own class: ".a-price .a-offscreen" (disambiguates repeated leaf classes)
+  if (classes.length) {
+    let anc = el.parentElement;
+    let found = 0;
+    for (let i = 0; i < 4 && anc && anc !== recordEl && found < 2; i++, anc = anc.parentElement) {
+      const acls = stableClasses(anc);
+      if (!acls.length) continue;
+      found++;
+      out.push({ kind: 'css', value: `.${cssEscape(acls[0])} .${cssEscape(classes[0])}`, base: 83 - found, note: 'ancestor class', firstOk: true });
+      // ".a-price.a-text-price .a-offscreen": the ancestor's second class separates variants (strike-through list price)
+      if (acls.length > 1) out.push({ kind: 'css', value: `.${cssEscape(acls[0])}.${cssEscape(acls[1])} .${cssEscape(classes[0])}`, base: 82 - found, note: 'ancestor classes', firstOk: true });
+    }
   }
   // full tag path with classes
   const path = chain.map((e) => tagOf(e) + stableClasses(e).slice(0, 1).map((c) => '.' + cssEscape(c)).join('')).join(' > ');
@@ -388,14 +437,18 @@ export function relativeSelector(el: Element, recordEl: Element, opts: RelativeO
     if (seen.has(key)) continue;
     seen.add(key);
     const els = queryOne({ kind: r.kind, value: r.value }, recordEl);
-    if (els.length !== 1 || els[0] !== el) continue;
+    // the engine takes the first match of a single-value field: an own-class selector whose first
+    // hit is the element is usable (".a-offscreen" when a strike price repeats it); unique is better
+    if (!els.length || els[0] !== el) continue;
+    const firstOfMany = els.length > 1;
+    if (firstOfMany && !r.firstOk) continue;
     // generalisation: how many sibling records have a match
     let hits = 0;
     const sample = records.slice(0, 25);
     for (const rec of sample) if (queryOne({ kind: r.kind, value: r.value }, rec).length) hits++;
     const hit = sample.length ? hits / sample.length : 1;
-    const score = scoreSelector(r.kind, r.value, r.base) + (hit >= 0.7 ? 20 * hit : -20);
-    const note = r.note ? `${r.note}; matches ${Math.round(hit * 100)}% of records` : undefined;
+    const score = scoreSelector(r.kind, r.value, r.base) + (hit >= 0.7 ? 20 * hit : -20) - (firstOfMany ? 8 : 0);
+    const note = `${r.note ? r.note + '; ' : ''}${firstOfMany ? `first of ${els.length}; ` : ''}matches ${Math.round(hit * 100)}% of records`;
     scored.push({ c: candidate(r.kind, r.value, score, note), hit });
   }
   scored.sort((a, b) => (b.c.score ?? 0) - (a.c.score ?? 0));

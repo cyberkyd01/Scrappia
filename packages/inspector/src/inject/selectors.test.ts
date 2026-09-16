@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { generateSelectors, relativeSelector, shortSelector } from './selectors.js';
-import { isGeneratedClass, isStableClass, isUtilityClass } from './util.js';
+import { isGeneratedClass, isSemanticAttr, isStableAttrValue, isStableClass, isUtilityClass } from './util.js';
 import { queryOne } from './query.js';
-import { loadHtml, productGrid } from './fixtures.test-util.js';
+import { amazonResults, loadHtml, productGrid } from './fixtures.test-util.js';
 
 function matchesExactly(doc: Document, c: { kind: string; value: string }, el: Element): boolean {
   const els = queryOne(c as { kind: 'css'; value: string }, doc);
@@ -24,6 +24,60 @@ describe('class classification', () => {
       expect(isStableClass(c), c).toBe(false);
     }
     expect(isStableClass('product_pod')).toBe(true);
+    // vendor-prefixed grid / spacing / colour utilities
+    for (const c of ['sg-col-4-of-12', 'sg-col', 'a-spacing-small', 'a-color-base', 'a-size-mini', 'a-text-bold']) expect(isUtilityClass(c), c).toBe(true);
+    for (const c of ['s-pagination-next', 'a-price', 'a-offscreen', 'price_color', 'a-link-normal']) expect(isStableClass(c), c).toBe(true);
+  });
+  it('treats digit-bearing or long free-text attribute values as unstable', () => {
+    expect(isStableAttrValue('aria-label', 'Go to next page, page 2')).toBe(false);
+    expect(isStableAttrValue('aria-label', 'Next')).toBe(true);
+    expect(isStableAttrValue('title', 'A very long tooltip that goes on and on forever')).toBe(false);
+    expect(isStableAttrValue('data-sku', 'SKU-3')).toBe(true);
+    expect(isStableAttrValue('rel', 'next')).toBe(true);
+    expect(isStableAttrValue('rel', 'noopener')).toBe(false);
+    expect(isSemanticAttr('aria-label', 'Go to next page, page 2')).toBe(false);
+    expect(isSemanticAttr('aria-label', 'Next')).toBe(true);
+    expect(isSemanticAttr('rel', 'next')).toBe(true);
+  });
+});
+
+describe('generateSelectors on Amazon-like pagination', () => {
+  beforeEach(() => {
+    loadHtml(amazonResults(), 'https://www.amazon.com/s?k=wireless+headphones');
+  });
+
+  it('ranks the class-based next link selector first and the digit-bearing aria-label lower or absent', () => {
+    const next = document.querySelector('a.s-pagination-next')!;
+    const cands = generateSelectors(next);
+    expect(cands[0].kind).toBe('css');
+    expect(cands[0].value).toMatch(/^(a)?\.s-pagination-next$/);
+    for (const c of cands) expect(matchesExactly(document, c, next), `${c.kind} ${c.value}`).toBe(true);
+    const aria = cands.findIndex((c) => /aria-label/.test(c.value));
+    expect(aria === -1 || aria > 0).toBe(true);
+    if (aria > 0) expect(cands[aria].score!).toBeLessThan(cands[0].score!);
+  });
+
+  it('prefers rel="next" over labels and a short digit-free aria-label over positional paths', () => {
+    loadHtml(`<html><body><nav><a href="/p1" rel="prev" aria-label="Go to previous page, page 1">Prev</a><a href="/p3" rel="next" aria-label="Go to next page, page 3">Next</a></nav>
+      <div><button aria-label="Search">go</button><button aria-label="Menu">go</button></div></body></html>`);
+    const next = document.querySelector('a[rel="next"]')!;
+    const cands = generateSelectors(next);
+    expect(cands[0].value).toBe('a[rel="next"]');
+    expect(cands.some((c) => /aria-label="Go to next page/.test(c.value))).toBe(false);
+    const search = document.querySelector('button[aria-label="Search"]')!;
+    expect(generateSelectors(search)[0].value).toBe('button[aria-label="Search"]');
+  });
+
+  it('record-relative selectors accept an own-class selector whose first match is the element', () => {
+    const recs = Array.from(document.querySelectorAll('[data-component-type="s-search-result"]'));
+    const rec = recs[2]; // has a strike-through list price with a second .a-offscreen
+    expect(rec.querySelectorAll('.a-offscreen').length).toBe(2);
+    const price = rec.querySelector('.a-price .a-offscreen')!;
+    const cands = relativeSelector(price, rec, { records: recs });
+    expect(cands[0].value).toMatch(/a-offscreen/);
+    expect(cands[0].value).not.toMatch(/nth-/);
+    expect(queryOne(cands[0], rec)[0]).toBe(price);
+    for (const r of recs) expect(queryOne(cands[0], r)[0]?.textContent).toMatch(/^\$\d+\.99$/);
   });
 });
 

@@ -58,7 +58,8 @@ export function RunMonitor({ runId, back }: { runId: string; back?: View }) {
     switch (e.type) {
       case 'run.start': setRecord(e.run); break;
       case 'run.progress': setStats(e.stats); break;
-      case 'run.done': setRecord(e.run); setStats(e.stats); setCaptcha(null); void invoke('runs.diff', runId).then(setDiff).catch(() => undefined); void invoke('runs.drift', runId).then(setDrift).catch(() => undefined); break;
+      // reload everything from storage: streamed rows are an approximation (detail-page merges re-emit their parent row)
+      case 'run.done': setRecord(e.run); setStats(e.stats); setCaptcha(null); void load().catch(() => undefined); break;
       case 'rows': if (!dataset || e.dataset === dataset) setRows((r) => [...r, ...e.rows].slice(-MAX_ROWS)); break;
       case 'drift': setDrift((d) => [...d, e.event]); break;
       case 'log': setLogs((l) => [...l, { ts: Date.now(), level: e.level, msg: e.data ? `${e.msg} ${JSON.stringify(e.data)}` : e.msg }].slice(-400)); break;
@@ -100,18 +101,18 @@ export function RunMonitor({ runId, back }: { runId: string; back?: View }) {
   return (
     <div className="view">
       <div className="view-header">
-        {back?.name === 'recorder' ? <Btn size="sm" variant="ghost" onClick={() => go(back)} data-testid="run-back-recorder">← Back to recorder</Btn> : <Btn size="sm" variant="ghost" onClick={() => go({ name: 'home' })}>← Recipes</Btn>}
+        {back?.name === 'recorder' ? <Btn size="sm" variant="ghost" onClick={() => go(back)} data-testid="run-back-recorder">← Back to recorder</Btn> : <Btn size="sm" variant="ghost" onClick={() => go({ name: 'home' })} data-testid="run-back-home">← Recipes</Btn>}
         <h1>{record?.recipeName ?? 'Run'}</h1>
-        <RunStatusBadge status={status} />
+        <span data-testid="run-status"><RunStatusBadge status={status} /></span>
         <span className="faint small">{record ? `${record.trigger} · started ${fmtTime(record.startedAt)}` : ''}{record?.finishedAt ? ` · ${fmtDuration(record.finishedAt - record.startedAt)}` : ''}</span>
         <div className="grow" />
         {running && (paused ? <Btn size="sm" onClick={() => void invoke('runs.resume', runId).then(() => setPaused(false))}>Resume</Btn> : <Btn size="sm" onClick={() => void invoke('runs.pause', runId).then(() => setPaused(true))}>Pause</Btn>)}
-        {running && <Btn size="sm" variant="danger" onClick={() => void invoke('runs.cancel', runId)}>Cancel</Btn>}
-        {!running && (status === 'failed' || status === 'cancelled' || status === 'partial') && <Btn size="sm" onClick={async () => { const a = await act(() => invoke('runs.resumeStopped', runId), 'Resumed'); if (a) go({ name: 'run', runId: a.id }); }}>Resume run</Btn>}
-        {record?.recipeId && <Btn size="sm" onClick={() => void openRecipe()}>Open recipe</Btn>}
+        {running && <Btn size="sm" variant="danger" onClick={() => void invoke('runs.cancel', runId)} data-testid="run-cancel">Cancel</Btn>}
+        {!running && (status === 'failed' || status === 'cancelled' || status === 'partial') && <Btn size="sm" onClick={async () => { const a = await act(() => invoke('runs.resumeStopped', runId), 'Resumed'); if (a) go({ name: 'run', runId: a.id }); }} data-testid="run-resume">Resume run</Btn>}
+        {record?.recipeId && <Btn size="sm" onClick={() => void openRecipe()} data-testid="run-open-recipe">Open recipe</Btn>}
         <span className="row gap-4">
-          <Select value={exportType} onChange={(e) => setExportType(e.target.value as Sink['type'])}>{['xlsx', 'csv', 'tsv', 'json', 'jsonl', 'xml', 'parquet', 'sqlite'].map((t) => <option key={t}>{t}</option>)}</Select>
-          <Btn size="sm" variant="primary" onClick={exportNow} disabled={running && (s?.rows ?? 0) === 0}>Export…</Btn>
+          <Select value={exportType} onChange={(e) => setExportType(e.target.value as Sink['type'])} data-testid="run-export-type">{['xlsx', 'csv', 'tsv', 'json', 'jsonl', 'xml', 'parquet', 'sqlite'].map((t) => <option key={t}>{t}</option>)}</Select>
+          <Btn size="sm" variant="primary" onClick={exportNow} disabled={running && (s?.rows ?? 0) === 0} data-testid="run-export">Export…</Btn>
         </span>
       </div>
       <div className="view-body tight" style={{ display: 'flex', flexDirection: 'column' }}>
@@ -120,8 +121,8 @@ export function RunMonitor({ runId, back }: { runId: string; back?: View }) {
           {record?.error && <div className="banner danger"><b>Error:</b> {record.error}</div>}
           {paused && running && <div className="banner info">Run paused.</div>}
           <div className="stat-cards">
-            <StatCard label="Rows" value={fmtNum(s?.rows)} sub={s?.rowsByDataset && Object.keys(s.rowsByDataset).length > 1 ? Object.entries(s.rowsByDataset).map(([k, v]) => `${k}: ${v}`).join(' · ') : undefined} />
-            <StatCard label="Pages" value={fmtNum(s?.pages)} sub={fmtBytes(s?.bytes)} />
+            <StatCard label="Rows" value={fmtNum(s?.rows)} sub={s?.rowsByDataset && Object.keys(s.rowsByDataset).length > 1 ? Object.entries(s.rowsByDataset).map(([k, v]) => `${k}: ${v}`).join(' · ') : undefined} testId="run-stat-rows" />
+            <StatCard label="Pages" value={fmtNum(s?.pages)} sub={fmtBytes(s?.bytes)} testId="run-stat-pages" />
             <StatCard label="Rows / min" value={s ? Math.round(s.rowsPerMinute).toLocaleString() : '–'} sub={s ? fmtDuration(s.elapsedMs) : ''} />
             <StatCard label="Queue" value={`${fmtNum(s?.requests.done)} / ${fmtNum(s?.requests.total)}`} sub={s ? `${s.requests.pending} pending · ${s.requests.running} running · ${s.requests.failed} failed` : ''} />
             <StatCard label="Fetches" value={`${fmtNum(s?.httpFetches)} · ${fmtNum(s?.browserFetches)}`} sub="http · browser" />
@@ -157,8 +158,8 @@ export function RunMonitor({ runId, back }: { runId: string; back?: View }) {
                 <table className="grid">
                   <thead><tr><th>Type</th><th className="num">Rows</th><th>Target</th><th>Status</th><th></th></tr></thead>
                   <tbody>{exports.map((x, i) => (
-                    <tr key={i}><td>{x.type}</td><td className="num">{fmtNum(x.rows)}</td><td className="ellipsis" title={x.target}>{x.target}</td><td>{x.error ? <span className="danger">{x.error}</span> : <Badge tone="ok">done</Badge>}</td>
-                      <td className="row gap-4">{!x.error && /^[a-z]:\\|^\//i.test(x.target) && <><Btn size="sm" onClick={() => void invoke('shell.openPath', x.target)}>Open file</Btn><Btn size="sm" onClick={() => void invoke('shell.showItemInFolder', x.target)}>Show in folder</Btn></>}</td></tr>
+                    <tr key={i} data-testid="run-export-row"><td>{x.type}</td><td className="num">{fmtNum(x.rows)}</td><td className="ellipsis" title={x.target} data-testid="run-export-target">{x.target}</td><td>{x.error ? <span className="danger">{x.error}</span> : <Badge tone="ok">done</Badge>}</td>
+                      <td className="row gap-4">{!x.error && /^[a-z]:[\\/]|^\//i.test(x.target) && <><Btn size="sm" onClick={() => void invoke('shell.openPath', x.target)} data-testid="run-export-open">Open file</Btn><Btn size="sm" onClick={() => void invoke('shell.showItemInFolder', x.target)} data-testid="run-export-show">Show in folder</Btn></>}</td></tr>
                   ))}</tbody>
                 </table>
               )}
@@ -186,7 +187,7 @@ function RowsTable({ rows, columns }: { rows: Array<Record<string, unknown>>; co
   const start = Math.max(0, Math.floor(scrollTop / ROW_H) - 5);
   const end = Math.min(rows.length, Math.ceil((scrollTop + height) / ROW_H) + 5);
   return (
-    <div ref={ref} className="rows-window grow" onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}>
+    <div ref={ref} className="rows-window grow" onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)} data-testid="run-rows">
       <table className="grid" style={{ tableLayout: 'fixed' }}>
         <thead><tr><th className="num" style={{ width: 50 }}>#</th>{columns.map((c) => <th key={c}>{c}</th>)}</tr></thead>
         <tbody>

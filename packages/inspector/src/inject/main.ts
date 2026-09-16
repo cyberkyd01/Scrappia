@@ -40,7 +40,8 @@ export function describeElement(el: Element, mode: InspectorMode = 'pick'): Pick
   let recordEl: Element | undefined;
   if (mode !== 'pickAction') {
     try {
-      const det = detectListFromElement(el);
+      // in "pick list" mode the user says the element repeats: accept two-item lists
+      const det = detectListFromElement(el, { minRecords: mode === 'pickList' ? 2 : 3 });
       if (det) {
         recordEl = det.records[det.clickedIndex] || det.records[0];
         record = toDetectedList(det, { withAlternatives: mode === 'pickList' });

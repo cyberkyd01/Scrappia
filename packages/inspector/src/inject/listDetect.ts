@@ -221,7 +221,7 @@ export interface DetectedListInternal extends RecordSelectorResult {
   clickedIndex: number;
 }
 
-function levelsFor(el: Element): ListCandidate[] {
+function levelsFor(el: Element, minRecords = 3): ListCandidate[] {
   const levels: ListCandidate[] = [];
   let cur: Element | null = el;
   const doc = docOf(el);
@@ -229,17 +229,22 @@ function levelsFor(el: Element): ListCandidate[] {
     const parent: Element = cur.parentElement;
     if (!skippable(cur)) {
       const sibs = similarSiblings(cur);
-      if (sibs.length >= 3) levels.push({ container: parent, records: sibs, clickedIndex: sibs.indexOf(cur), size: totalSize(sibs) });
+      if (sibs.length >= minRecords) levels.push({ container: parent, records: sibs, clickedIndex: sibs.indexOf(cur), size: totalSize(sibs) });
     }
     cur = parent;
   }
   return levels;
 }
 
-/** Detect the repeating record that contains `el`. Returns null when it is not in a list. */
-export function detectListFromElement(el: Element): DetectedListInternal | null {
+/**
+ * Detect the repeating record that contains `el`. Returns null when it is not in a list.
+ * `minRecords` (default 3) is the smallest sibling group that counts as a list; "Pick list" mode
+ * lowers it to 2 because the user explicitly said the clicked element repeats (e.g. a "load more"
+ * page that starts with two rows).
+ */
+export function detectListFromElement(el: Element, opts: { minRecords?: number } = {}): DetectedListInternal | null {
   resetSignatureCache();
-  const levels = levelsFor(el);
+  const levels = levelsFor(el, Math.max(2, opts.minRecords ?? 3));
   if (!levels.length) return null;
   const evaluated = levels.map((l) => {
     const unwrapped = unwrap(l.records);

@@ -43,6 +43,26 @@ for unattended runs (see the User guide).
 
 ## Running
 
+**Test run shows nothing.**
+Open the **Test run** tab of the data preview: a log under the header lists every page fetched
+with its HTTP status and row count, plus lines such as "Switching to browser for www.amazon.com
+(http-error: HTTP 503)" or "the site refused the request". Typical causes and fixes:
+- `HTTP 404: page not found`: the start URL is wrong; copy it again from the address bar.
+- `HTTP 403 / 429 / 503`: the site blocks plain requests. In `auto` mode Scrappia now retries the
+  page in the browser automatically; if it still fails, set the recipe's engine mode to `browser`,
+  lower concurrency to 1, raise the delay, or add proxies.
+- `Run finished without rows`: the list or field selectors matched nothing on the fetched page
+  (often a consent wall or a different layout for non-logged-in visitors). Runs started from the
+  desktop reuse the recorder browser's cookies, so accept banners or log in in the recorder
+  window first, then test again.
+
+**Next page: only one page is scraped.**
+Check the pagination selector matches a link on every page, not just the first one. A selector
+copied from an Amazon-style link such as `a[aria-label="Go to next page, page 2"]` contains the
+page number and will not match on page 2; use the stable class instead (`a.s-pagination-next`).
+Open the pagination editor and use **Test** to see the match count. For JavaScript "Next" buttons
+without a link, Scrappia clicks them in-page automatically.
+
 **Rows are missing or the run stops early.**
 Look at the Run monitor's log and the request list. Common causes: a block page (see below), the
 "next" selector stopped matching (drift event), or `maxRequests` / `maxRows` caps in the recipe.

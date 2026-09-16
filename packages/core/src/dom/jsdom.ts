@@ -23,6 +23,7 @@ export function looksLikeBrowserRequired(html: string): { required: boolean; rea
   if (/cf-browser-verification|cf_chl_opt|challenge-platform|_cf_chl|Just a moment\.\.\.|Checking your browser/i.test(h)) return { required: true, reason: 'cloudflare-challenge' };
   if (/px-captcha|perimeterx|_pxhd|Access Denied.*Reference #/i.test(h)) return { required: true, reason: 'perimeterx' };
   if (/datadome|dd\.js.*captcha/i.test(h)) return { required: true, reason: 'datadome' };
+  if (/<title>\s*(Robot Check|Sorry! Something went wrong|Access Denied|Are you a robot)/i.test(h) || /Enter the characters you see below|automated access to .{0,40}data|unusual traffic from your/i.test(h)) return { required: true, reason: 'bot-check' };
   if (/<div id="(root|app|__next|__nuxt)"[^>]*>\s*<\/div>/i.test(h) && !/<article|<li|<tr|<h[1-3]/i.test(h)) return { required: true, reason: 'spa-shell' };
   const textLen = h.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<[^>]+>/g, '').replace(/\s+/g, ' ').length;
   const hasAppScript = /<script(?![^>]*type=["']application\/(ld\+)?json["'])[^>]*>/i.test(h);

@@ -25,6 +25,8 @@ const UTILITY_PREFIXES =
   '(p|px|py|pt|pb|pl|pr|ps|pe|m|mx|my|mt|mb|ml|mr|ms|me|w|h|min-w|min-h|max-w|max-h|gap|space|text|bg|border|rounded|flex|grid|items|justify|content|font|leading|tracking|shadow|opacity|z|top|left|right|bottom|inset|overflow|col|row|order|self|place|object|transition|duration|ease|scale|rotate|translate|cursor|select|pointer|sr|block|inline|absolute|relative|fixed|sticky|static|truncate|uppercase|lowercase|capitalize|underline|italic|whitespace|break|divide|ring|outline|fill|stroke|animate|d|float|align|clearfix|container|container-fluid|mw|vw|vh|g|gx|gy|fs|fw|lh|hstack|vstack|visually-hidden|justify-content|align-items|flex-wrap|flex-row|flex-column|position|display|invisible|rounded-circle|rounded-pill|border-top|border-bottom|border-start|border-end)';
 const UTILITY_RE = new RegExp(`^(?:-?(?:[a-z0-9]+:)*)-?${UTILITY_PREFIXES}(?:-(?:[a-z0-9]+|\\[[^\\]]+\\]|\\d+(?:\\.\\d+)?(?:/\\d+)?|\\d+%))*$`, 'i');
 const UTILITY_MISC_RE = /[:\[\]/!]|^(?:col|row|clearfix|container|hidden|block|inline|flex|grid|relative|absolute|fixed|sticky|truncate|italic|underline|uppercase|lowercase|capitalize|invisible|visible|d-\w+|xs|sm|md|lg|xl|xxl)$/i;
+// vendor-prefixed layout/typography utilities: "sg-col-4-of-12", "a-spacing-small", "a-color-base", "a-size-mini", "a-text-bold"
+const PREFIXED_UTILITY_RE = /(?:^|-)col-\d+(?:-of-\d+)?$|^[a-z]{1,4}-col(?:-\d+)?$|(?:^|-)(?:spacing|padding|margin)-|(?:^|-)(?:color|size)-(?:base|primary|secondary|tertiary|mini|micro|small|medium|large|x+l|x+s|sm|md|lg|\d+|none|link|success|error|warning|info|state|price|muted|dark|light)(?:-plus|-minus)?$|(?:^|-)text-(?:bold|normal|italic|left|right|center|truncate)$|(?:^|-)line-clamp-\d+$/i;
 
 /** Classes that should never be used in selectors (hashed, generated or transient state). */
 export function isGeneratedClass(name: string): boolean {
@@ -39,7 +41,17 @@ export function isGeneratedClass(name: string): boolean {
 
 /** Layout utility classes (tailwind / bootstrap): allowed as a last resort, useless for naming. */
 export function isUtilityClass(name: string): boolean {
-  return UTILITY_RE.test(name) || UTILITY_MISC_RE.test(name);
+  return UTILITY_RE.test(name) || UTILITY_MISC_RE.test(name) || PREFIXED_UTILITY_RE.test(name);
+}
+
+/**
+ * Generic wrapper/layout class names: usable in selectors but meaningless as field names and as
+ * alignment keys ("s-widget-container", "card-wrapper", "a-section", "row", "grid", "col-inner").
+ */
+const GENERIC_WRAPPER_RE = /^(?:wrap|wrapper|inner|content|contents|container|row|col|column|columns|item|items|block|box|card|cards|left|right|center|main|section|cell|grid|list|body|holder|outer|group|panel|pane|area|region|widget|module|component|element|el|node|entry|entries|result|results|tile|tiles|product|products|post|posts|article|articles)$|(?:^|[-_])(?:container|wrapper|wrap|inner|outer|section|row|col|column|grid|widget|holder|slot)s?$|^(?:col|row|grid|widget)(?:[-_]|$)|^s[-_]widget/i;
+
+export function isGenericWrapperClass(name: string): boolean {
+  return GENERIC_WRAPPER_RE.test(name);
 }
 
 /** Class names usable in selectors and for naming. */
@@ -61,17 +73,34 @@ export function allSafeClasses(el: Element): string[] {
 
 // ---------- attributes ----------
 
-export const SEMANTIC_ATTRS = ['data-testid', 'data-test', 'data-test-id', 'data-cy', 'data-qa', 'data-id', 'itemprop', 'name', 'aria-label', 'role'];
+export const SEMANTIC_ATTRS = ['data-testid', 'data-test', 'data-test-id', 'data-cy', 'data-qa', 'data-id', 'itemprop', 'name', 'rel', 'aria-label', 'role'];
+
+/** Human-readable attributes: only short, digit-free values ("Next", "Search") are stable anchors. */
+export const FREE_TEXT_ATTRS = ['aria-label', 'title', 'alt', 'placeholder', 'aria-description', 'aria-roledescription', 'label', 'value'];
+export const MAX_FREE_TEXT_ATTR_LEN = 30;
+/** link relations worth anchoring on (rel="nofollow"/"noopener" are noise) */
+const STABLE_REL_RE = /^(?:next|prev|previous|first|last|up|author|canonical|alternate|tag|bookmark|license|help|search)$/i;
 
 const FRAMEWORK_DATA_ATTR_RE = /^data-(react|reactid|reactroot|v-|ng-|emotion|styled|radix|headlessui|state|hydrat|server|ssr|component-id|svelte|astro|turbo|hk|nextjs|__|lazy|src|srcset|original|bind|ref|id-|s-|w-|framer|aos|toggle|target|bs-|slick|swiper|owl|test-state|testid-)/;
 
+/**
+ * Stability of an attribute VALUE as a selector anchor. Free-text attributes (aria-label, title, alt,
+ * placeholder…) are unstable when they contain digits ("Go to next page, page 2") or long prose.
+ */
+export function isStableAttrValue(name: string, value: string | null): boolean {
+  if (value == null || !value.length || value.length > 80 || /[\n\r]/.test(value)) return false;
+  if (name === 'rel') return STABLE_REL_RE.test(value.trim());
+  if (FREE_TEXT_ATTRS.includes(name)) return !/\d/.test(value) && value.length <= MAX_FREE_TEXT_ATTR_LEN;
+  return true;
+}
+
 /** Attributes that make good selector anchors: the allow-list plus stable-looking data-* attributes. */
 export function isSemanticAttr(name: string, value: string | null): boolean {
-  if (value == null || !value.length || value.length > 80 || /[\n\r]/.test(value)) return false;
+  if (!isStableAttrValue(name, value)) return false;
   if (SEMANTIC_ATTRS.includes(name)) return true;
   if (!name.startsWith('data-')) return false;
   if (FRAMEWORK_DATA_ATTR_RE.test(name)) return false;
-  if (/^[0-9a-f]{8,}$/i.test(value) || /^\{|^\[/.test(value)) return false;
+  if (/^[0-9a-f]{8,}$/i.test(value as string) || /^\{|^\[/.test(value as string)) return false;
   return true;
 }
 
@@ -159,6 +188,32 @@ export function hasLayout(doc: Document = document): boolean {
   return r.width > 0 || r.height > 0;
 }
 
+/** Class names used for screen-reader-only / clipped text (".a-offscreen", ".sr-only", ".visually-hidden"). */
+const HIDDEN_TEXT_CLASS_RE = /(?:^|[-_])(?:offscreen|off-screen|sr-only|sronly|visually-hidden|visuallyhidden|visualhidden|screen-reader(?:-only|-text)?|screenreader|a11y-hidden|hidden-accessible|assistive-text)(?:$|[-_])/i;
+
+/**
+ * Text that is present for accessibility but not visible: clipped / 1px absolutely positioned
+ * elements. Class-name heuristics first (jsdom has no layout), computed style when there is one.
+ */
+export function isVisuallyHiddenText(el: Element): boolean {
+  const list = el.classList ? Array.from(el.classList) : [];
+  if (list.some((c) => HIDDEN_TEXT_CLASS_RE.test(c))) return true;
+  const doc = docOf(el);
+  const view = doc.defaultView;
+  if (!view || !hasLayout(doc)) return false;
+  try {
+    const cs = view.getComputedStyle(el);
+    if (cs.position !== 'absolute' && cs.position !== 'fixed') return false;
+    const clip = cs.clip || '';
+    if (/rect\(\s*[01](?:px)?\s*,?\s*[01](?:px)?\s*,?\s*[01](?:px)?\s*,?\s*[01](?:px)?\s*\)/.test(clip)) return true;
+    if (/inset\(\s*(?:50|100)%/.test(cs.clipPath || '')) return true;
+    const r = rectOf(el);
+    return r.width <= 1 && r.height <= 1 && cs.overflow === 'hidden';
+  } catch {
+    return false;
+  }
+}
+
 // ---------- misc ----------
 
 export const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'HEAD', 'META', 'LINK', 'TITLE', 'BR', 'HR', 'WBR']);
@@ -221,6 +276,11 @@ export const DATE_RE = /\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}
 
 export function looksLikePrice(t: string): boolean {
   return t.length <= 40 && PRICE_RE.test(t);
+}
+/** The whole text is one price ("$29.99", "1 299,00 kr"), not a sentence containing one. */
+export const CLEAN_PRICE_RE = new RegExp(`^(?:${CUR}\\s?\\d[\\d.,\\u00a0 ]*|\\d[\\d.,\\u00a0 ]*\\s?${CUR})$`);
+export function isCleanPrice(t: string): boolean {
+  return t.length <= 24 && CLEAN_PRICE_RE.test(t.trim());
 }
 export function looksLikeDate(t: string): boolean {
   return t.length <= 60 && DATE_RE.test(t);
