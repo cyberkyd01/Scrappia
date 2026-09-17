@@ -170,11 +170,15 @@ export class RecorderSession {
   currentUrl(): string { return this.isOpen ? this.page!.url() : ''; }
 
   /** Cookies + user agent of the recorder browser, so runs see the same site state (logins, consent, region). */
-  async sessionState(): Promise<{ cookies: Array<{ name: string; value: string; domain: string; path: string }>; userAgent?: string } | null> {
+  async sessionState(): Promise<{ cookies: Array<{ name: string; value: string; domain: string; path: string; secure?: boolean; httpOnly?: boolean; sameSite?: 'Strict' | 'Lax' | 'None'; expires?: number }>; userAgent?: string } | null> {
     if (!this.isOpen) return null;
     const cookies = await this.handle!.context.cookies().catch(() => []);
     const userAgent = await this.page!.evaluate(() => navigator.userAgent).catch(() => undefined);
-    return { cookies: cookies.filter((c) => c.domain).map((c) => ({ name: c.name, value: c.value, domain: c.domain, path: c.path || '/' })), userAgent };
+    // keep every attribute: __Host-/__Secure- and SameSite=None cookies are rejected by Chromium without `secure`
+    return {
+      cookies: cookies.filter((c) => c.domain).map((c) => ({ name: c.name, value: c.value, domain: c.domain, path: c.path || '/', secure: c.secure, httpOnly: c.httpOnly, sameSite: c.sameSite as 'Strict' | 'Lax' | 'None' | undefined, expires: c.expires && c.expires > 0 ? c.expires : undefined })),
+      userAgent,
+    };
   }
 
   // ---------- overlay API ----------

@@ -121,6 +121,26 @@ describe('Runner (browser mode)', () => {
     expect(Array.from(storage.iterRows(run.id)).map((r) => r.data.row).sort()).toEqual(['A1', 'A2', 'B1', 'B2', 'C1', 'C2']);
   });
 
+  it('session cookies with strict attributes never fail a run; valid ones reach the page', async () => {
+    const storage = new SqliteStorage();
+    const host = new URL(site.url).hostname;
+    const recipe: RecipeInput = {
+      name: 'cookies', entry: { urls: [`${site.url}/cookies`], template: 't' },
+      engine: { ...engine, cookies: [
+        { name: 'session', value: 'abc', domain: host, path: '/' },
+        { name: '__Host-csrf', value: 'x1', domain: host, path: '/', secure: true },        // host-only, needs url form
+        { name: 'tracker', value: 't', domain: host, path: '/', sameSite: 'None' },         // needs secure
+        { name: 'broken', value: 'v', domain: 'not a domain!!', path: '/' },                 // invalid: skipped, not fatal
+      ] },
+      templates: { t: { fields: [{ name: 'c', selector: [{ value: '#c' }] }] } },
+    };
+    const { run, stats } = await new Runner({ recipe: parseRecipe(recipe), storage, outDir, logger: quiet }).start();
+    expect(run.status).toBe('succeeded');
+    expect(stats.requests.failed).toBe(0);
+    const sent = String(Array.from(storage.iterRows(run.id))[0].data.c);
+    expect(sent).toContain('session=abc'); // plain http fixture: secure cookies are (correctly) not sent, the run still works
+  });
+
   it('screenshot and image fields produce files', async () => {
     const storage = new SqliteStorage();
     const recipe: RecipeInput = {

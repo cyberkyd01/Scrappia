@@ -94,6 +94,7 @@ export function startFixtureSite(port = 0): Promise<{ server: Server; url: strin
     // "bot wall": the first hit of each botwall URL is rejected with 503 (like Amazon throttling plain HTTP clients)
     if (path.startsWith('/botwall')) { const n = hits.filter((h) => h === path).length; return n < 2 ? send('<html><title>Sorry! Something went wrong!</title><body>Enter the characters you see below</body></html>', 503) : send(layout('Wall', `<div class="item">passed ${path}</div>`)); }
     if (path === '/redirect') { res.writeHead(302, { location: '/products?page=2' }); return res.end(); }
+    if (path === '/cookies') return send(layout('Cookies', `<pre id="c">${(req.headers.cookie ?? '').replace(/</g, '&lt;')}</pre>`));
     if (path === '/robots.txt') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('User-agent: *\nDisallow: /secret\n'); }
     if (path.startsWith('/img/')) { res.writeHead(200, { 'content-type': 'image/jpeg' }); return res.end(Buffer.from([0xff, 0xd8, 0xff, 0xd9])); }
     if (path === '/post') {

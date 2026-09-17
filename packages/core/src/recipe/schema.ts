@@ -297,7 +297,12 @@ export const EngineConfig = z.object({
   timezone: z.string().optional(),
   viewport: z.object({ width: z.number(), height: z.number() }).optional(),
   headers: z.record(z.string()).default({}),
-  cookies: z.array(z.object({ name: z.string(), value: z.string(), domain: z.string().optional(), path: z.string().optional() })).default([]),
+  cookies: z.array(z.object({
+    name: z.string(), value: z.string(), domain: z.string().optional(), path: z.string().optional(),
+    secure: z.boolean().optional(), httpOnly: z.boolean().optional(), sameSite: z.enum(['Strict', 'Lax', 'None']).optional(),
+    /** unix seconds; omit for session cookies */
+    expires: z.number().optional(),
+  })).default([]),
   blockResources: z.array(z.enum(['image', 'font', 'media', 'stylesheet', 'script', 'xhr', 'fetch', 'websocket', 'other'])).default(['image', 'font', 'media']),
   blockUrlPatterns: z.array(z.string()).default([]),
   respectRobots: z.boolean().default(false),

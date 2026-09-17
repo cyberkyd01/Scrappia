@@ -106,9 +106,7 @@ export class PlaywrightProvider implements BrowserProvider {
     context.setDefaultTimeout(e.timeoutMs);
     context.setDefaultNavigationTimeout(e.timeoutMs);
 
-    if (e.cookies.length) {
-      await context.addCookies(e.cookies.map((c) => ({ name: c.name, value: c.value, domain: c.domain ?? '', path: c.path ?? '/' })).filter((c) => c.domain));
-    }
+    if (e.cookies.length) await addCookiesSafely(context, e.cookies);
     if (e.stealth && e.fingerprint) await context.addInitScript(FINGERPRINT_SCRIPT);
     if (opts.initScript) await context.addInitScript(opts.initScript);
 
@@ -136,6 +134,34 @@ export class PlaywrightProvider implements BrowserProvider {
 }
 
 function safe(s: string) { return s.replace(/[^a-zA-Z0-9_-]/g, '_'); }
+
+type RecipeCookie = EngineConfig['cookies'][number];
+
+/** Translate a recipe cookie into what Chromium accepts (prefix rules, secure/sameSite constraints). */
+export function toBrowserCookie(c: RecipeCookie): Parameters<BrowserContext['addCookies']>[0][number] | null {
+  if (!c.domain) return null;
+  const host = c.domain.replace(/^\./, '');
+  const secure = c.secure || c.sameSite === 'None' || /^__(Host|Secure)-/.test(c.name);
+  const base = { name: c.name, value: c.value, secure, httpOnly: c.httpOnly ?? false, sameSite: c.sameSite ?? 'Lax', ...(c.expires && c.expires > 0 ? { expires: c.expires } : {}) } as const;
+  // __Host- cookies must be host-only with path "/" and no Domain attribute: Playwright expresses that with `url`
+  if (c.name.startsWith('__Host-')) return { ...base, url: `https://${host}/` };
+  return { ...base, domain: c.domain, path: c.path ?? '/' };
+}
+
+/** Add cookies without ever failing the run: try the batch, then one by one, skipping the invalid ones. */
+export async function addCookiesSafely(context: BrowserContext, cookies: RecipeCookie[]): Promise<{ added: number; skipped: string[] }> {
+  const prepared = cookies.map((c) => ({ c, b: toBrowserCookie(c) })).filter((x): x is { c: RecipeCookie; b: NonNullable<ReturnType<typeof toBrowserCookie>> } => !!x.b);
+  const skipped: string[] = [];
+  try { await context.addCookies(prepared.map((x) => x.b)); return { added: prepared.length, skipped }; }
+  catch { /* fall through to per-cookie */ }
+  let added = 0;
+  for (const { c, b } of prepared) {
+    try { await context.addCookies([b]); added++; }
+    catch (e) { skipped.push(c.name); log.debug('cookie skipped', { name: c.name, domain: c.domain, error: (e as Error).message.split('\n')[0] }); }
+  }
+  if (skipped.length) log.warn('some session cookies could not be applied', { skipped: skipped.length, names: skipped.slice(0, 5) });
+  return { added, skipped };
+}
 
 export function parseProxy(url: string): { server: string; username?: string; password?: string } {
   const u = new URL(url);
