@@ -43,6 +43,15 @@ for unattended runs (see the User guide).
 
 ## Running
 
+**The preview shows rows, but the test run or run finds none.**
+Check the **Runs start at** line under the recorder's buttons. A run always begins at that address,
+not at whatever page the browser happens to be showing. If you opened the recorder on a home page
+and then searched, filtered or clicked your way to the page you want, the two can differ. Scrappia
+now updates the start URL for you the moment you capture something, shows an amber
+"not the page you are on" warning while they differ, and offers **Use this page**. Click that, then
+test again. A start URL you typed yourself in Settings is marked **pinned** and is never changed
+automatically.
+
 **Test run shows nothing.**
 Open the **Test run** tab of the data preview: a log under the header lists every page fetched
 with its HTTP status and row count, plus lines such as "Switching to browser for www.amazon.com

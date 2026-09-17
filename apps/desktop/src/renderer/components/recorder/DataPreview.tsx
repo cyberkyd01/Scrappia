@@ -9,8 +9,10 @@ import { invoke, useIpcEvent } from '../../api';
 import { Btn, Badge, useToast } from '../ui';
 import { cellText, fmtNum, truncate } from '../../lib/format';
 
-export function DataPreview({ recipe, templateName, recorderOpen, refreshKey, collapsed, onToggle }: {
+export function DataPreview({ recipe, templateName, recorderOpen, refreshKey, collapsed, onToggle, mismatch }: {
   recipe: Recipe; templateName: string; recorderOpen: boolean; refreshKey: string; collapsed: boolean; onToggle: () => void;
+  /** Set when the run would start on a different page than the one being previewed. */
+  mismatch?: { entryUrl: string; pageUrl: string; onUse: () => void };
 }) {
   const toast = useToast();
   const template = recipe.templates[templateName];
@@ -115,6 +117,12 @@ export function DataPreview({ recipe, templateName, recorderOpen, refreshKey, co
         {tab === 'preview' && <Btn size="sm" onClick={() => void refresh()} disabled={!recorderOpen || loading || !hasFields} data-testid="preview-refresh">{loading ? 'Refreshing…' : 'Refresh'}</Btn>}
         {testRun?.status === 'running' ? <Btn size="sm" variant="danger" onClick={() => void invoke('runs.cancel', testRun.runId)} data-testid="test-run-stop">Stop</Btn> : <Btn size="sm" onClick={startTest} disabled={!hasFields || recipe.entry.urls.length === 0} title="Dry run: max 5 requests, no exports" data-testid="test-run-button">Test run (5 pages)</Btn>}
       </div>
+      {!collapsed && mismatch && (
+        <div className="banner warn tiny" data-testid="entry-mismatch-banner" style={{ margin: '6px 10px' }}>
+          <span className="grow">This preview is from <b className="mono">{mismatch.pageUrl}</b>, but a run would start at <b className="mono">{mismatch.entryUrl}</b> and would not find these records.</span>
+          <Btn size="sm" variant="primary" onClick={mismatch.onUse} data-testid="entry-mismatch-use">Use this page as the start URL</Btn>
+        </div>
+      )}
       {!collapsed && tab === 'test' && testLog.length > 0 && (
         <div className="log tiny" data-testid="test-run-log" style={{ maxHeight: 96, overflow: 'auto', borderBottom: '1px solid var(--border)' }}>
           {testLog.map((l, i) => <div key={i} className={`line ${l.level}`}>{l.msg}</div>)}

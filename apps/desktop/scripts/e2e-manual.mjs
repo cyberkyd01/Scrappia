@@ -611,6 +611,52 @@ step(13, 'robustness: disabled test run, modes with closed browser, Escape, hand
   assert(r.logLines.some((l) => /Switching to browser/.test(l)), `log shows the fallback: ${r.logLines.join(' | ')}`);
 });
 
+/**
+ * Regression: the recipe used to keep the URL typed in the New recipe dialog, so people who searched
+ * or filtered inside the recorder browser captured on one page and ran on another ("preview shows 50
+ * rows, run finds 0").
+ */
+step(16, 'start URL follows the page you capture from', async (d) => {
+  const start = `${d.site.url}/categories`;
+  const target = `${d.site.url}/products`;
+  await d.newRecipe(start);
+  let recipe = await d.recipeJson();
+  assert(recipe.entry.urls[0] === start, `start URL begins as the opened page (${recipe.entry.urls[0]})`);
+  // the user navigates inside the recorder browser to the page they actually want
+  await d.tid('recorder-url').fill(target);
+  await d.tid('recorder-go').click();
+  await d.waitRecorder({ url: target });
+  await waitFor(() => d.tid('entry-mismatch-badge').count(), { label: 'start URL mismatch warning' });
+  assert(await d.tid('entry-use-page').count() > 0, 'the start URL bar offers "Use this page"');
+  await d.pickList('article.product', 1, [/^(title|name|product|link)$/, /^price$/, /^url$/]);
+  await d.waitToast(/Start URL updated/i);
+  recipe = await d.recipeJson();
+  assert(recipe.entry.urls[0] === target, `start URL followed the capture page (${recipe.entry.urls[0]})`);
+  assert((await d.tid('entry-mismatch-badge').count()) === 0, 'the mismatch warning is gone once they agree');
+  assert((await d.tid('entry-mismatch-banner').count()) === 0, 'the preview banner is gone too');
+  const r = await d.testRun();
+  assert(r.status === 'succeeded' && r.rows.length >= 10, `test run found ${r.rows.length} rows (this used to be 0)`);
+});
+
+/** A start URL the user set by hand must never be rewritten by capturing. */
+step(17, 'a hand-edited start URL is pinned and never changed by capturing', async (d) => {
+  await d.newRecipe(`${d.site.url}/products`);
+  await d.openDrawer('general');
+  const urls = d.tid('general-entry-urls');
+  await urls.fill(`${d.site.url}/products?page=2`);
+  await urls.blur();
+  await d.closeDrawer();
+  await d.tid('recorder-url').fill(`${d.site.url}/categories`);
+  await d.tid('recorder-go').click();
+  await d.waitRecorder({ url: `${d.site.url}/categories` });
+  await d.pickField('ul.cats a', 0);
+  await d.tid('field-name').fill('cat');
+  await d.tid('capture-field').click();
+  await d.waitToast(/Captured "cat/);
+  const recipe = await d.recipeJson();
+  assert(recipe.entry.urls[0] === `${d.site.url}/products?page=2`, `hand-set start URL kept (${recipe.entry.urls[0]})`);
+});
+
 step(15, 'manual list selector: type article.product -> test -> apply -> tree + capture', async (d) => {
   await d.newRecipe(`${d.site.url}/products`);
   await d.tid('tree-list-none').click();

@@ -347,7 +347,13 @@ export class Runner {
       if (template.list.filter) { const fn = new Function('record', `return (${template.list.filter});`) as (r: Record<string, unknown>) => boolean; records = records.filter((r) => { try { return !!fn(r); } catch { return true; } }); }
       listRows = await processRecords(records, template.list.fields, rowCtx, false);
       if (result.extract.listMatch && result.extract.listMatch.matched < template.list.minItems) {
-        this.log.warn('fewer records than minItems', { url: result.url, matched: result.extract.listMatch.matched, min: template.list.minItems });
+        const sel = template.list.selector[0]?.value;
+        this.log.warn(
+          result.extract.listMatch.matched === 0
+            ? `no records on ${result.url} — the list selector "${sel}" matched nothing there. Check that the start URL is the page you captured from.`
+            : `only ${result.extract.listMatch.matched} record(s) on ${result.url} (expected at least ${template.list.minItems})`,
+          { url: result.url, matched: result.extract.listMatch.matched, min: template.list.minItems, selector: sel },
+        );
       }
     }
 

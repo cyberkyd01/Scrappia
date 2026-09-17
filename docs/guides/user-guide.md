@@ -52,6 +52,12 @@ Top bar:
 - **AI suggest**: asks your configured AI provider to propose fields for the selected list. Needs an
   AI provider in Settings.
 
+Under the buttons, the **Runs start at** line shows the address a run will begin from. You can
+browse freely in the browser window: as soon as you capture something, this follows the page you
+captured from, and until then it warns you that it points somewhere else with a **Use this page**
+button. If you set the start URLs yourself under Settings, the line reads **pinned** and Scrappia
+leaves them alone.
+
 Left panel, the **template tree**: every template, its list, its fields, its follow links, its
 pagination and its actions. Click any item to edit it on the right.
 

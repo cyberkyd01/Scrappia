@@ -127,8 +127,8 @@ export async function runBrowser(o: BrowserRunOptions): Promise<PageResult> {
     if (!found) o.onLog?.('waitFor selector did not appear; extracting anyway', { selector: template.waitFor[0]?.value });
   }
   if (template.list) {
-    // give lazy lists a moment to render
-    await locate(scope, template.list.selector, Math.min(t, 8000));
+    // single-page apps hydrate after load: wait for the records to appear before extracting
+    await locate(scope, template.list.selector, Math.min(t, 10_000));
   }
 
   const spec = buildSpec(template, page.url());
@@ -141,6 +141,17 @@ export async function runBrowser(o: BrowserRunOptions): Promise<PageResult> {
   };
 
   let result = await extractOnce();
+  // Late hydration: a list that renders after the first paint would otherwise be reported as empty.
+  // Only pages that actually came back empty pay this cost.
+  if (template.list && result.records.length === 0) {
+    for (let attempt = 0; attempt < 2 && result.records.length === 0; attempt++) {
+      await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => { });
+      await sleep(1500, o.signal);
+      result = await extractOnce();
+    }
+    if (result.records.length === 0) o.onLog?.('list selector matched nothing after waiting for the page to settle', { selector: template.list.selector[0]?.value, url: page.url() });
+    else o.onLog?.('records appeared after waiting for the page to settle', { records: result.records.length });
+  }
   const seen = new Set<string>(result.records.map((r) => hash(r)));
   let steps = 0;
   const p = template.pagination;

@@ -24,6 +24,8 @@ export function Recorder({ recipeId: initialId, initialRecipe, initialUrl, copil
   const { run, busy } = useAsync();
   const [recipe, dispatch] = useReducer(recipeReducer, undefined, () => initialRecipe ?? blankRecipe(initialUrl ? hostName(initialUrl) : 'New recipe', initialUrl ?? ''));
   const [recipeId, setRecipeId] = useState<string | undefined>(initialId);
+  // Start URLs of a saved recipe were chosen deliberately: never rewrite them behind the user's back.
+  const [entryPinned, setEntryPinned] = useState<boolean>(!!initialId);
   const [current, setCurrent] = useState<string>(recipe.entry.template);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [picked, setPicked] = useState<PickedElement | null>(null);
@@ -47,6 +49,11 @@ export function Recorder({ recipeId: initialId, initialRecipe, initialUrl, copil
   const templateName = recipe.templates[current] ? current : recipe.entry.template;
 
   const dispatchDirty = useCallback((a: Parameters<typeof dispatch>[0]) => { dispatch(a); setDirty(true); }, []);
+  /** Editing the recipe by hand (settings drawer / JSON tab) pins the start URLs. */
+  const settingsDispatch = useCallback((a: Parameters<typeof dispatch>[0]) => {
+    if (a.type === 'setEntry' || a.type === 'set' || a.type === 'replaceRecipe' || a.type === 'setKeywords') setEntryPinned(true);
+    dispatchDirty(a);
+  }, [dispatchDirty]);
 
   // ---- recorder browser lifecycle ----
   useEffect(() => {
@@ -110,13 +117,38 @@ export function Recorder({ recipeId: initialId, initialRecipe, initialUrl, copil
     }).finally(() => setAiBusy(false));
   };
 
+  // ---- start URL follows the page you configure on ----
+  // The recipe's start URL is what a run loads. People open the recorder on a home page, search or
+  // filter inside the browser, and capture there: without this the run would load the wrong page and
+  // find nothing. `entryPinned` protects start URLs the user set deliberately.
+  const entryUrl = recipe.entry.urls[0] ?? '';
+  const pageUrl = status.open && status.url && status.url !== 'about:blank' ? status.url : '';
+  const entryTemplate = recipe.entry.template;
+  const entryEditable = recipe.entry.urls.length <= 1 && !/\{\{/.test(entryUrl);
+  const entryDiffers = !!pageUrl && !sameUrl(pageUrl, entryUrl);
+  const useCurrentPageAsEntry = useCallback(() => {
+    if (!pageUrl) return;
+    dispatchDirty({ type: 'setEntry', patch: { urls: [pageUrl] } });
+    setEntryPinned(true);
+    toast(`Runs will start at ${pageUrl}`, 'ok');
+  }, [pageUrl, dispatchDirty, toast]);
+  /** Called whenever something is captured on the entry template. */
+  const syncEntryUrl = useCallback(() => {
+    if (entryPinned || !entryEditable || templateName !== entryTemplate) return;
+    if (!pageUrl || sameUrl(pageUrl, entryUrl)) return;
+    dispatchDirty({ type: 'setEntry', patch: { urls: [pageUrl] } });
+    toast(`Start URL updated to the page you are capturing from: ${pageUrl}`, 'ok');
+  }, [entryPinned, entryEditable, templateName, entryTemplate, pageUrl, entryUrl, dispatchDirty, toast]);
+
   // ---- capture handlers ----
   const capture = (field: Field, target: FieldTarget) => {
+    syncEntryUrl();
     dispatchDirty({ type: 'addField', template: templateName, target, field });
     toast(`Captured "${field.name}"`, 'ok');
     setPicked(null); setSelection(null);
   };
   const setList = (selector: SelectorCandidate[], fields: Field[]) => {
+    syncEntryUrl();
     dispatchDirty({ type: 'setList', template: templateName, selector, fields: fields.length ? [...(template.list?.fields ?? []), ...fields] : undefined });
     setDetected(null); setPicked(null); setSelection({ kind: 'list', template: templateName });
     toast(`List set: ${selector[0]?.value}${fields.length ? ` (+${fields.length} fields)` : ''}`, 'ok');
@@ -129,6 +161,7 @@ export function Recorder({ recipeId: initialId, initialRecipe, initialUrl, copil
     if (parent) setPicked(parent); else toast('Cannot expand further', 'warn');
   });
   const follow = (field: Field) => {
+    syncEntryUrl();
     const name = uniqueTemplateName(recipe, 'detail');
     const target: FieldTarget = field.scope === 'record' && (template.list || picked?.record) ? 'list' : 'page';
     if (target === 'list' && !template.list && picked?.record) dispatchDirty({ type: 'setList', template: templateName, selector: picked.record.selector });
@@ -142,11 +175,13 @@ export function Recorder({ recipeId: initialId, initialRecipe, initialUrl, copil
     if (picked?.href) void openUrl(picked.href);
   };
   const setPagination = (kind: 'next' | 'loadMore' | 'scroll', selector?: SelectorCandidate[]) => {
+    syncEntryUrl();
     dispatchDirty({ type: 'setPagination', template: templateName, pagination: paginationFor(kind, selector) });
     setPicked(null); setSelection({ kind: 'pagination', template: templateName });
     toast(`Pagination set: ${kind}`, 'ok');
   };
   const addAction = (action: Action) => {
+    syncEntryUrl();
     dispatchDirty({ type: 'addAction', template: templateName, action });
     setSelection({ kind: 'action', template: templateName, index: template.actions.length });
     setPicked(null);
@@ -216,6 +251,13 @@ export function Recorder({ recipeId: initialId, initialRecipe, initialUrl, copil
           <Btn size="sm" variant="primary" onClick={() => void validateAndSave({ id: recipeId })} disabled={busy} data-testid="recorder-save">Save</Btn>
           <Btn size="sm" variant="primary" onClick={startRun} disabled={busy || recipe.entry.urls.length === 0} title="Save and start a full run" data-testid="recorder-run">Run ▶</Btn>
         </div>
+        <div className="row tiny" data-testid="entry-url-bar">
+          <span className="muted">Runs start at</span>
+          <span className="mono ellipsis grow" title={entryUrl || 'not set'} data-testid="entry-url">{entryUrl || '(not set)'}</span>
+          {entryDiffers && entryEditable && <Badge tone="warn"><span data-testid="entry-mismatch-badge">not the page you are on</span></Badge>}
+          {pageUrl && entryDiffers && <Btn size="sm" onClick={useCurrentPageAsEntry} title="Runs will start at the page open in the browser right now" data-testid="entry-use-page">Use this page</Btn>}
+          {entryPinned && !!entryUrl && <span className="faint" title="You set this start URL by hand, so it no longer follows the browser">pinned</span>}
+        </div>
       </div>
 
       <div className="recorder-mid">
@@ -282,10 +324,11 @@ export function Recorder({ recipeId: initialId, initialRecipe, initialUrl, copil
         </div>
       </div>
 
-      <DataPreview recipe={recipe} templateName={templateName} recorderOpen={status.open} refreshKey={refreshKey} collapsed={previewCollapsed} onToggle={() => setPreviewCollapsed((v) => !v)} />
+      <DataPreview recipe={recipe} templateName={templateName} recorderOpen={status.open} refreshKey={refreshKey} collapsed={previewCollapsed} onToggle={() => setPreviewCollapsed((v) => !v)}
+        mismatch={entryDiffers && entryEditable && templateName === entryTemplate ? { entryUrl, pageUrl, onUse: useCurrentPageAsEntry } : undefined} />
       {copilotOpen && <CopilotPanel recipe={recipe} sessionKey={copilotSession} restore={restoreCopilot} onRecipe={onCopilotRecipe} onOpenRun={onCopilotRun} onWaiting={(w) => { copilotWaiting.current = w; }} focusSignal={copilotFocus} />}
 
-      {drawer && <RecipeSettings recipe={recipe} dispatch={dispatchDirty} onClose={() => setDrawer(null)} initialTab={drawer === 'json' ? 'json' : 'general'} />}
+      {drawer && <RecipeSettings recipe={recipe} dispatch={settingsDispatch} onClose={() => setDrawer(null)} initialTab={drawer === 'json' ? 'json' : 'general'} />}
       {saveAs && <PromptModal title="Save recipe as" label="New recipe name" defaultValue={`${recipe.name} copy`} submitLabel="Save" onClose={() => setSaveAs(false)} onSubmit={(name) => { setRecipeId(undefined); void validateAndSave({ name }); }} />}
       {aiSuggest && (
         <AiSuggestModal result={aiSuggest} hasList={!!template.list} onClose={() => setAiSuggest(null)} onApply={(res, keepList, keepPage, keepPagination) => {
@@ -347,6 +390,15 @@ function selectionTitle(s: Selection): string {
     default: return 'Capture';
   }
 }
+/** Compare two page addresses ignoring a www. prefix, a trailing slash and the #fragment. */
+export function sameUrl(a: string, b: string): boolean {
+  const norm = (u: string) => {
+    try { const x = new URL(u); return `${x.protocol}//${x.hostname.replace(/^www\./, '')}${x.pathname.replace(/\/+$/, '')}${x.search}`.toLowerCase(); }
+    catch { return (u ?? '').trim().toLowerCase().replace(/\/+$/, ''); }
+  };
+  return norm(a) === norm(b);
+}
+
 function hostName(url: string): string {
   try { return new URL(/^[a-z]+:\/\//i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, ''); } catch { return 'New recipe'; }
 }

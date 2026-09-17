@@ -121,6 +121,19 @@ describe('Runner (browser mode)', () => {
     expect(Array.from(storage.iterRows(run.id)).map((r) => r.data.row).sort()).toEqual(['A1', 'A2', 'B1', 'B2', 'C1', 'C2']);
   });
 
+  it('waits for records that render seconds after the page loads (single-page apps)', async () => {
+    const storage = new SqliteStorage();
+    const recipe: RecipeInput = {
+      name: 'late', entry: { urls: [`${site.url}/late?ms=3500`], template: 't' }, engine: { ...engine, mode: 'auto' },
+      templates: { t: { list: { selector: [{ value: '.row' }], fields: [{ name: 'n', selector: [{ value: '.n' }] }] } } },
+    };
+    const { run, stats } = await new Runner({ recipe: parseRecipe(recipe), storage, outDir, logger: quiet }).start();
+    expect(run.status).toBe('succeeded');
+    expect(stats.rows).toBe(6);
+    expect(stats.browserFetches).toBe(1);
+    expect(Array.from(storage.iterRows(run.id))[0].data.n).toBe('Late 1');
+  }, 60_000);
+
   it('session cookies with strict attributes never fail a run; valid ones reach the page', async () => {
     const storage = new SqliteStorage();
     const host = new URL(site.url).hostname;
