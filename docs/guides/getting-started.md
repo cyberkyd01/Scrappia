@@ -48,11 +48,17 @@ If a line prints red text and stops, see [Troubleshooting](troubleshooting.md).
 
 ## 4. Open the desktop app
 
+Double-click **Start Scrappia.cmd** in the Scrappia folder (Windows). The first time it also runs the
+setup from step 3 if that has not been done. You can right-click the file and choose **Send to →
+Desktop (create shortcut)** to get a Scrappia icon on your Desktop.
+
+From a terminal on any system:
+
 ```
 npx electron apps/desktop
 ```
 
-A window titled **Scrappia** opens. Leave the terminal open while you use the app.
+A window titled **Scrappia** opens.
 
 ## 5. Your first scraper (2 minutes)
 
