@@ -7,6 +7,7 @@ import { extractFromHtml, looksLikeBrowserRequired } from '../dom/jsdom.js';
 import { httpFetch, type CookieJar } from '../fetch/http.js';
 import { hash, sleep } from '../util/misc.js';
 import { runActions, locate, evaluateMainWorld, type ActionContext } from './actions.js';
+import { scrollPage } from './scroll.js';
 import { looksBlocked, type CaptchaSolver } from './captcha.js';
 import { PAGINATION_PROBE, buildSpec } from './spec.js';
 
@@ -152,7 +153,31 @@ export async function runBrowser(o: BrowserRunOptions): Promise<PageResult> {
     if (result.records.length === 0) o.onLog?.('list selector matched nothing after waiting for the page to settle', { selector: template.list.selector[0]?.value, url: page.url() });
     else o.onLog?.('records appeared after waiting for the page to settle', { records: result.records.length });
   }
-  const seen = new Set<string>(result.records.map((r) => hash(r)));
+  // Records are counted, not just remembered: a listing can legitimately contain many identical-looking
+  // rows (the same seller, the same price). Tracking how many copies we have already taken keeps them
+  // all while still ignoring the records a "load more" step re-renders.
+  const seen = new Map<string, number>();
+  const tally = (records: Array<Record<string, unknown>>) => {
+    const m = new Map<string, number>();
+    for (const r of records) { const h = hash(r); m.set(h, (m.get(h) ?? 0) + 1); }
+    return m;
+  };
+  for (const [h, n] of tally(result.records)) seen.set(h, n);
+  /** How many records the list selector matches right now (cheap, no extraction). */
+  const countRecords = async (): Promise<number> => {
+    if (!template.list) return 0;
+    const f = await locate(scope, template.list.selector, 0);
+    return f ? f.locator.count().catch(() => 0) : 0;
+  };
+  /** Poll until the list grows past `before`, so pagination never races the site's own loading. */
+  const waitForMoreRecords = async (before: number, timeoutMs: number): Promise<boolean> => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await sleep(400, o.signal);
+      if ((await countRecords()) > before) return true;
+    }
+    return false;
+  };
   let steps = 0;
   const p = template.pagination;
   // A "next" control without a usable href (JS pagination button) must be clicked in-page.
@@ -169,23 +194,41 @@ export async function runBrowser(o: BrowserRunOptions): Promise<PageResult> {
       if (o.signal?.aborted) throw new Error('aborted');
       let advanced = false;
       if (p.type === 'loadMore' || p.type === 'next') {
-        const found = await locate(scope, p.selector, 1500);
-        if (!found) break;
+        // "load more" controls usually sit under the list: reveal them first (the page may scroll an inner element)
+        if (p.type === 'loadMore') await scrollPage(scope, 'bottom').catch(() => undefined);
+        const found = await locate(scope, p.selector, 5000);
+        if (!found) { o.onLog?.('pagination control not found on the page; stopping', { selector: p.selector[0]?.value }); break; }
         const btn = found.locator.first();
-        if (!(await btn.isVisible().catch(() => false))) break;
-        if (!(await btn.isEnabled().catch(() => true))) break; // disabled "next"/"load more" = last page
+        if (!(await btn.isVisible().catch(() => false))) { o.onLog?.('pagination control is not visible; stopping', { selector: p.selector[0]?.value }); break; }
+        if (!(await btn.isEnabled().catch(() => true))) { o.onLog?.('pagination control is disabled: last page reached'); break; }
+        const before = await countRecords();
         await btn.scrollIntoViewIfNeeded().catch(() => { });
-        await btn.click({ timeout: t }).catch(() => { });
-        advanced = true;
+        let clicked = true;
+        try { await btn.click({ timeout: Math.min(t, 10_000) }); }
+        catch (e) {
+          // a sticky header/footer or a cookie bar can cover the control: press it directly
+          o.onLog?.('click was blocked, pressing the control from the page', { error: (e as Error).message.split('\n')[0] });
+          clicked = await btn.evaluate((el: HTMLElement) => { el.click(); return true; }).catch(() => false);
+          if (!clicked) o.onLog?.('could not press the pagination control');
+        }
+        advanced = clicked;
         if (p.type === 'next') await page.waitForLoadState('domcontentloaded', { timeout: t }).catch(() => { });
+        else if (clicked && template.list) {
+          // wait for the new records instead of guessing a delay
+          const grew = await waitForMoreRecords(before, Math.min(t, 15_000));
+          if (!grew) o.onLog?.('no new records appeared after pressing the control', { had: before });
+        }
       } else if (p.type === 'scroll') {
-        const before = await page.evaluate(() => document.body.scrollHeight).catch(() => 0);
+        const beforeRecords = await countRecords();
+        const before = await scrollPage(scope, 'probe').catch(() => undefined);
         if (p.selector) { const found = await locate(scope, p.selector, 500); if (found) await found.locator.first().evaluate((el: HTMLElement) => { el.scrollTop = el.scrollHeight; }).catch(() => { }); }
-        await page.mouse.wheel(0, 3000).catch(() => { });
-        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => { });
+        const after = await scrollPage(scope, 'bottom').catch(() => undefined);
+        if (steps === 0 && after) o.onLog?.('scrolling', { element: after.target, height: after.height });
+        await page.mouse.wheel(0, 2000).catch(() => { });
         await sleep(p.delayMs, o.signal);
-        const after = await page.evaluate(() => document.body.scrollHeight).catch(() => 0);
-        advanced = after !== before;
+        const settled = await scrollPage(scope, 'probe').catch(() => undefined);
+        const grew = template.list ? (await countRecords()) > beforeRecords : false;
+        advanced = grew || (!!settled && !!before && settled.height !== before.height) || (!!after && after.moved);
       } else if (p.type === 'script') {
         const r = await evaluateMainWorld(scope, p.code).catch(() => false);
         advanced = r !== false;
@@ -196,7 +239,16 @@ export async function runBrowser(o: BrowserRunOptions): Promise<PageResult> {
       steps++;
       const next = await extractOnce();
       let fresh = 0;
-      for (const r of next.records) { const h = hash(r); if (!seen.has(h)) { seen.add(h); result.records.push(r); result.recordFollowUrls.push(next.recordFollowUrls[next.records.indexOf(r)] ?? {}); fresh++; } }
+      const counts = new Map<string, number>();
+      for (let i = 0; i < next.records.length; i++) {
+        const r = next.records[i];
+        const h = hash(r);
+        const n = (counts.get(h) ?? 0) + 1;
+        counts.set(h, n);
+        // only the copies beyond what we already hold are new, whether the site appended or re-rendered
+        if (n > (seen.get(h) ?? 0)) { result.records.push(r); result.recordFollowUrls.push(next.recordFollowUrls[i] ?? {}); fresh++; }
+      }
+      for (const [h, n] of counts) seen.set(h, Math.max(seen.get(h) ?? 0, n));
       result.listMatch = next.listMatch ? { candidate: next.listMatch.candidate, matched: result.records.length } : result.listMatch;
       result.page = { ...result.page, ...next.page };
       result.probes = next.probes;

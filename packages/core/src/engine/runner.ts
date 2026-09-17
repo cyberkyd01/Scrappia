@@ -67,6 +67,8 @@ export class Runner {
   private sessionCounter = 0;
   private blockedStreak = new Map<string, number>();
   private browserHosts = new Set<string>();
+  /** How many rows with identical values we have stored per dataset, so real duplicates are not lost. */
+  private keyTally = new Map<string, number>();
   private outDir: string;
   private lastProgress = 0;
   private startedAt = Date.now();
@@ -92,7 +94,7 @@ export class Runner {
       if ((entry.level === 'warn' || entry.level === 'error') && this.run) this.emit({ type: 'log', runId: this.run.id, level: entry.level, msg: entry.msg, data: entry.data });
     });
     if (opts.signal) opts.signal.addEventListener('abort', () => this.cancel(), { once: true });
-    this.stats = { requests: { total: 0, done: 0, failed: 0, pending: 0, running: 0, skipped: 0 }, rows: 0, rowsByDataset: {}, pages: 0, bytes: 0, httpFetches: 0, browserFetches: 0, drift: 0, healed: 0, validationFlags: 0, validationDrops: 0, startedAt: Date.now(), elapsedMs: 0, rowsPerMinute: 0, aiCalls: 0, aiTokens: 0 };
+    this.stats = { requests: { total: 0, done: 0, failed: 0, pending: 0, running: 0, skipped: 0 }, rows: 0, rowsByDataset: {}, pages: 0, bytes: 0, httpFetches: 0, browserFetches: 0, drift: 0, healed: 0, validationFlags: 0, validationDrops: 0, duplicates: 0, startedAt: Date.now(), elapsedMs: 0, rowsPerMinute: 0, aiCalls: 0, aiTokens: 0 };
   }
 
   on(l: RunEventListener) { this.listeners.add(l); return () => this.listeners.delete(l); }
@@ -104,6 +106,17 @@ export class Runner {
   pause() { this.paused = true; this.log.info('paused'); }
   resume() { this.paused = false; const w = this.resumeWaiters.splice(0); w.forEach((r) => r()); }
   get isPaused() { return this.paused; }
+
+  /**
+   * Repeated rows *within one page* are numbered so none is lost. The counter is per page, so the
+   * same row arriving again from a different URL (aliases like /list and /list?page=1) still collapses.
+   */
+  private numberedRowKey(dataset: string, pageUrl: string, key: string): string {
+    const k = `${dataset}|${pageUrl}|${key}`;
+    const n = (this.keyTally.get(k) ?? 0) + 1;
+    this.keyTally.set(k, n);
+    return n === 1 ? key : hash(`${key}#${n}`);
+  }
 
   private secret(name: string): string | undefined { return this.opts.secrets?.(name) ?? this.storage.getSecret(name) ?? process.env[name]; }
 
@@ -398,8 +411,12 @@ export class Runner {
       if (row.flags.length) this.stats.validationFlags++;
       const data = ctx.parent?.mode === 'separate' ? { _parentKey: ctx.parent.rowKey, ...row.data } : row.data;
       if (!this.recipe.output.dedupe) row.key = hash(`${row.key}|${result.url}|${written}|${Math.random()}`);
+      // Without explicit key fields, two rows that merely look the same are still two rows: number the
+      // repeats so a listing full of identical entries is not collapsed into one.
+      else if (!this.recipe.output.keys.length) row.key = this.numberedRowKey(dataset, result.url, row.key);
       const r = this.storage.upsertRow({ runId: this.run.id, dataset, rowKey: row.key, data, hash: hash(data), pageUrl: result.url, flags: row.flags.length ? row.flags : undefined });
       if (r.inserted) { written++; emitted.push(data); }
+      else if (!r.changed) this.stats.duplicates++;
     }
     if (!listRows.length && !pageRow && this.recipe.output.blankRowWhenEmpty) {
       const data: Record<string, unknown> = { _pageUrl: result.url, _empty: true };

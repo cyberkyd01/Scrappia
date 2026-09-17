@@ -121,6 +121,47 @@ describe('Runner (browser mode)', () => {
     expect(Array.from(storage.iterRows(run.id)).map((r) => r.data.row).sort()).toEqual(['A1', 'A2', 'B1', 'B2', 'C1', 'C2']);
   });
 
+  it('keeps rows that happen to have identical values, across load-more steps', async () => {
+    const storage = new SqliteStorage();
+    const base: RecipeInput = {
+      name: 'dupes', entry: { urls: [`${site.url}/dupes`], template: 't' }, engine,
+      templates: { t: { list: { selector: [{ value: '.row' }], fields: [{ name: 'row', selector: [{ value: ':scope' }] }] }, pagination: { type: 'loadMore', selector: [{ kind: 'text', value: 'Load More' }], delayMs: 200 } } },
+    };
+    const { run, stats } = await new Runner({ recipe: parseRecipe(base), storage, outDir, logger: quiet }).start();
+    expect(stats.rows).toBe(24); // 12 + 12, only two distinct values between them
+    expect(Array.from(storage.iterRows(run.id)).filter((r) => r.data.row === 'A')).toHaveLength(12);
+
+    // with key fields the user asked for identity, so repeats collapse and are reported
+    const keyed = { ...base, output: { keys: ['row'] } };
+    const r2 = await new Runner({ recipe: parseRecipe(keyed), storage: new SqliteStorage(), outDir, logger: quiet }).start();
+    expect(r2.stats.rows).toBe(2);
+    expect(r2.stats.duplicates).toBe(22);
+  }, 90_000);
+
+  it('scrolls the inner container on pages whose window does not scroll', async () => {
+    const storage = new SqliteStorage();
+    const recipe: RecipeInput = {
+      name: 'inner', entry: { urls: [`${site.url}/innerscroll`], template: 't' }, engine,
+      templates: { t: { list: { selector: [{ value: '.row' }], fields: [{ name: 'row', selector: [{ value: ':scope' }] }] }, pagination: { type: 'scroll', delayMs: 300 } } },
+    };
+    const { run, stats } = await new Runner({ recipe: parseRecipe(recipe), storage, outDir, logger: quiet }).start();
+    expect(run.status).toBe('succeeded');
+    expect(stats.rows).toBe(40); // 10 rendered, the rest revealed by scrolling the inner pane
+  }, 90_000);
+
+  it('clicks a "Load More" button that has no id or stable class and waits for the new rows', async () => {
+    for (const selector of [{ kind: 'text' as const, value: 'Load More' }, { kind: 'css' as const, value: 'button.rounded-full' }]) {
+      const storage = new SqliteStorage();
+      const recipe: RecipeInput = {
+        name: `lm-${selector.kind}`, entry: { urls: [`${site.url}/loadmore-utility`], template: 't' }, engine,
+        templates: { t: { list: { selector: [{ value: '.row' }], fields: [{ name: 'row', selector: [{ value: ':scope' }] }] }, pagination: { type: 'loadMore', selector: [selector], delayMs: 200 } } },
+      };
+      const { run, stats } = await new Runner({ recipe: parseRecipe(recipe), storage, outDir, logger: quiet }).start();
+      expect(run.status, selector.kind).toBe('succeeded');
+      expect(stats.rows, selector.kind).toBe(20); // 5 + three clicks of 5, then the button removes itself
+    }
+  }, 120_000);
+
   it('waits for records that render seconds after the page loads (single-page apps)', async () => {
     const storage = new SqliteStorage();
     const recipe: RecipeInput = {

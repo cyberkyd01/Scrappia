@@ -2,6 +2,7 @@ import type { Frame, Locator, Page } from '../browser/provider.js';
 import type { Action, Selector } from '../recipe/schema.js';
 import { interpolate, sleep } from '../util/misc.js';
 import type { CaptchaSolver } from './captcha.js';
+import { scrollPage } from './scroll.js';
 
 export interface ActionContext {
   keywords: Record<string, string>;
@@ -96,12 +97,13 @@ async function runAction(page: Page, scope: Page | Frame, a: Action, ctx: Action
           const found = await locate(scope, a.selector, 1000);
           if (found) await found.locator.first().evaluate((el: HTMLElement) => { el.scrollTop = el.scrollHeight; }).catch(() => { });
         } else {
+          // works whether the window scrolls or an inner container does
+          await scrollPage(scope, 'bottom').catch(() => undefined);
           await page.mouse.wheel(0, 2000).catch(() => { });
-          await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => { });
         }
         await sleep(a.delayMs ?? 800, ctx.signal);
         if (a.untilNoChange) {
-          const h = await page.evaluate(() => document.body.scrollHeight).catch(() => 0);
+          const h = (await scrollPage(scope, 'probe').catch(() => undefined))?.height ?? 0;
           if (h === lastHeight) { if (++stable >= 2) break; } else stable = 0;
           lastHeight = h;
         }

@@ -94,6 +94,35 @@ export function startFixtureSite(port = 0): Promise<{ server: Server; url: strin
     // "bot wall": the first hit of each botwall URL is rejected with 503 (like Amazon throttling plain HTTP clients)
     if (path.startsWith('/botwall')) { const n = hits.filter((h) => h === path).length; return n < 2 ? send('<html><title>Sorry! Something went wrong!</title><body>Enter the characters you see below</body></html>', 503) : send(layout('Wall', `<div class="item">passed ${path}</div>`)); }
     if (path === '/redirect') { res.writeHead(302, { location: '/products?page=2' }); return res.end(); }
+    // A page whose window does NOT scroll: the list lives in an inner container (app shells, marketplaces).
+    if (path === '/innerscroll') return send(layout('Inner scroll', `
+      <style>html,body{height:100%;overflow:hidden;margin:0}#pane{height:400px;overflow:auto}</style>
+      <div id="pane"><div id="list"></div></div>
+      <script>
+        var n = 0, list = document.getElementById('list'), pane = document.getElementById('pane');
+        function add() { for (var i = 0; i < 10 && n < 40; i++) { n++; var d = document.createElement('div'); d.className = 'row'; d.style.height = '60px'; d.textContent = 'Row ' + n; list.appendChild(d); } }
+        add();
+        pane.addEventListener('scroll', function () { if (pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 20) setTimeout(add, 150); });
+      </script>`));
+    // A "Load More" button with only utility classes (no id, no stable class), inside an inner scroll container.
+    if (path === '/loadmore-utility') return send(layout('Load more', `
+      <style>html,body{height:100%;overflow:hidden;margin:0}#pane{height:400px;overflow:auto}</style>
+      <div id="pane"><div id="list"></div><button class="transition-colors duration-300 rounded-full focus:outline-none">Load More</button></div>
+      <script>
+        var n = 0, clicks = 0, list = document.getElementById('list'), btn = document.querySelector('button');
+        function add() { for (var i = 0; i < 5; i++) { n++; var d = document.createElement('div'); d.className = 'row'; d.style.height = '60px'; d.textContent = 'Item ' + n; list.appendChild(d); } }
+        add();
+        btn.addEventListener('click', function () { clicks++; setTimeout(function () { add(); if (clicks >= 3) btn.remove(); }, 600); });
+      </script>`));
+    // A listing whose rows repeat the same values (same seller, same price): they are still separate rows.
+    if (path === '/dupes') return send(layout('Duplicates', `
+      <div id="list"></div><button class="rounded-full">Load More</button>
+      <script>
+        var list = document.getElementById('list'), btn = document.querySelector('button');
+        function add() { for (var i = 0; i < 12; i++) { var d = document.createElement('div'); d.className = 'row'; d.textContent = i % 2 ? 'B' : 'A'; list.appendChild(d); } }
+        add();
+        btn.addEventListener('click', function () { add(); btn.remove(); });
+      </script>`));
     // content that only exists after the page has been open for a while (single-page apps, XHR lists)
     if (path === '/late') {
       const ms = Number(url.searchParams.get('ms') ?? 3000);

@@ -72,6 +72,22 @@ page number and will not match on page 2; use the stable class instead (`a.s-pag
 Open the pagination editor and use **Test** to see the match count. For JavaScript "Next" buttons
 without a link, Scrappia clicks them in-page automatically.
 
+**The "Load More" button is never pressed.**
+Scrappia scrolls to the bottom of the list first (including pages whose window does not scroll and
+whose content sits in an inner panel), presses the button, and then waits for the new rows to appear
+instead of guessing a delay. If a normal click is blocked by a sticky bar or a cookie banner it
+presses the control directly. When it still cannot, the Test run log says so: "pagination control not
+found", "not visible", "disabled: last page reached", or "no new records appeared". Buttons styled
+only with utility classes have no stable selector, so Scrappia also remembers the button's label
+("Load More") as a fallback.
+
+**I get fewer rows than the page shows.**
+Two rows with exactly the same values are still two rows, and Scrappia keeps them. It only merges
+rows when you have set **Key fields** under Settings → Output, which is what those fields are for.
+If rows are missing, check whether a key field is set; the Test run log reports how many rows were
+merged. Capturing one more distinguishing column (a link, an amount, a date) also makes each row
+unique.
+
 **Rows are missing or the run stops early.**
 Look at the Run monitor's log and the request list. Common causes: a block page (see below), the
 "next" selector stopped matching (drift event), or `maxRequests` / `maxRows` caps in the recipe.

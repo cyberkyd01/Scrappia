@@ -176,7 +176,13 @@ export function Recorder({ recipeId: initialId, initialRecipe, initialUrl, copil
   };
   const setPagination = (kind: 'next' | 'loadMore' | 'scroll', selector?: SelectorCandidate[]) => {
     syncEntryUrl();
-    dispatchDirty({ type: 'setPagination', template: templateName, pagination: paginationFor(kind, selector) });
+    // "Load More" buttons are often styled entirely with utility classes, which makes every CSS
+    // selector positional and fragile. The button's own label is the stable thing: keep it as a fallback.
+    const label = picked?.text?.trim().replace(/\s+/g, ' ');
+    const withLabel = selector && label && label.length <= 40 && !selector.some((c) => c.kind === 'text')
+      ? [...selector, { kind: 'text' as const, value: label, score: 10, note: 'button label' }]
+      : selector;
+    dispatchDirty({ type: 'setPagination', template: templateName, pagination: paginationFor(kind, withLabel) });
     setPicked(null); setSelection({ kind: 'pagination', template: templateName });
     toast(`Pagination set: ${kind}`, 'ok');
   };

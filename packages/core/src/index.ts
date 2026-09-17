@@ -5,6 +5,7 @@ export * from './engine/runner.js';
 export * from './engine/events.js';
 export * from './engine/plan.js';
 export * from './engine/spec.js';
+export * from './engine/scroll.js';
 export * from './engine/export.js';
 export * from './engine/captcha.js';
 export * from './engine/browserPool.js';

@@ -144,8 +144,13 @@ entry in the template tree and check the selector. Prefer a short, stable class 
 
 ### "Load more" buttons
 
-Pick the button and choose **Set as load more**. Scrappia clicks it repeatedly until it disappears
-or no new rows appear. No page count needed.
+Pick the button and choose **Set as load more**. Scrappia scrolls to the bottom, presses the button
+and waits for the new rows, repeating until the button disappears, becomes disabled, or nothing new
+arrives. No page count needed. Because such buttons often have no stable selector, the button's own
+label is stored as a fallback, so the recipe keeps working when the styling changes.
+
+Pages whose content sits in an inner panel (the window itself does not scroll) are handled the same
+way: Scrappia finds the element that actually scrolls.
 
 ### Infinite scroll
 
@@ -219,7 +224,8 @@ Open with the gear button in the recorder.
   once), delay between requests, proxies (one per line), respect robots.txt, blocked resources,
   CAPTCHA provider, session persistence.
 - **Output**: key fields (what makes a row unique, used to remove duplicates and for change
-  detection), validation rules (flag, drop or fail on bad values), extra columns (page URL, time,
+  detection; leave empty to keep every row, including ones whose values happen to be identical),
+  validation rules (flag, drop or fail on bad values), extra columns (page URL, time,
   keyword, category), flatten nested data.
 - **Outputs (sinks)**: where the data goes. Add as many as you want. Each has a mode: **overwrite**
   the file, **append** to it, or **upsert** (update rows with the same key, add new ones).

@@ -12,6 +12,8 @@ export interface RunStats {
   healed: number;
   validationFlags: number;
   validationDrops: number;
+  /** rows merged into an existing row because they matched on the configured key fields */
+  duplicates: number;
   startedAt: number;
   finishedAt?: number;
   elapsedMs: number;

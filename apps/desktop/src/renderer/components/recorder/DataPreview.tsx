@@ -56,6 +56,7 @@ export function DataPreview({ recipe, templateName, recorderOpen, refreshKey, co
       else if (e.type === 'run.done') {
         if (e.run.status !== 'succeeded') setTestLog((l) => [...l, { level: 'error' as const, msg: e.run.status === 'failed' ? `Run failed${e.run.error ? `: ${e.run.error}` : ''}` : `Run ${e.run.status}: ${e.stats.requests.failed} request(s) failed, see lines above` }].slice(-8));
         else if (e.stats.rows === 0) setTestLog((l) => [...l, { level: 'error' as const, msg: 'Run finished without rows: the list/field selectors matched nothing on the fetched page(s)' }].slice(-8));
+        else if (e.stats.duplicates > 0) setTestLog((l) => [...l, { level: 'info' as const, msg: `${e.stats.duplicates} row(s) merged into earlier rows because they matched your key fields (Settings → Output → Key fields)` }].slice(-8));
         // Streamed rows are a live approximation (detail-page merges re-emit their parent row); the stored rows are authoritative.
         const id = e.run.id;
         void invoke('runs.rows', id, undefined, { limit: 500 }).then((rs) => setTestRun((t) => (t && t.runId === id ? { ...t, rows: rs } : t))).catch(() => undefined);
