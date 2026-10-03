@@ -5,6 +5,10 @@ recipe, then run it on your desktop, from the command line, on a server with a R
 schedule, or from an AI agent over MCP. It covers everything WebHarvy does and fills the gaps its
 users (and users of Octoparse, ParseHub, Browse.ai, Apify and Firecrawl) complain about.
 
+> **Deploying to a server?** Follow the step-by-step VPS guide: **[DEPLOY.md](DEPLOY.md)**
+>
+> **Installing?** Follow the step-by-step guide: **[INSTALL.md](INSTALL.md)**
+
 ## What it does
 
 - **Visual recorder**: click elements in a stealth Chromium window; Scrappia detects the repeating

@@ -1,5 +1,7 @@
 # Hosting guide: run Scrappia on a server
 
+> For a Linux VPS, the canonical step-by-step guide is **[DEPLOY.md](../../DEPLOY.md)**: isolated Node and Chromium, systemd services for the API and the MCP server, nginx, HTTPS, backups, and updates with automatic rollback. The options below remain as quick alternatives.
+
 Use this when scrapers must run on a schedule without your computer being on, when several people
 need access, or when other software needs to pull data through the API.
 
