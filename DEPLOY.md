@@ -131,6 +131,7 @@ This step only adds packages; nothing is upgraded or removed.
 
 ```bash
 sudo bash -euo pipefail <<'EOF'
+export DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1   # additive only: needrestart must not restart other services
 source /etc/scrappia/deploy.conf
 . /etc/os-release
 case "$ID:$VERSION_ID" in
@@ -142,7 +143,8 @@ esac
 FONTS="fontconfig fonts-liberation fonts-freefont-ttf fonts-noto-color-emoji"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends ca-certificates curl git openssh-client xz-utils openssl $LIBS $FONTS </dev/null
+MISSING_PKGS=""; for p in ca-certificates curl git openssh-client xz-utils openssl $LIBS $FONTS; do dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q 'ok installed' || MISSING_PKGS="$MISSING_PKGS $p"; done
+if [ -n "$MISSING_PKGS" ]; then apt-get install -y --no-install-recommends $MISSING_PKGS </dev/null; fi   # only what's missing - never upgrades installed packages
 echo "OK: packages installed"
 EOF
 ```
@@ -150,7 +152,7 @@ EOF
 **Optional: CJK and Thai fonts.** If screenshots of Chinese, Japanese, Korean or Thai pages show empty boxes, add these fonts. Patchright's own list includes them, and it's about 40 MB:
 
 ```bash
-sudo apt-get install -y --no-install-recommends fonts-wqy-zenhei fonts-ipafont-gothic fonts-tlwg-loma-otf fonts-unifont
+sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 apt-get install -y --no-install-recommends fonts-wqy-zenhei fonts-ipafont-gothic fonts-tlwg-loma-otf fonts-unifont
 ```
 
 ### 3b. Optional: add swap (servers with less than 2 GB RAM)
@@ -536,6 +538,7 @@ The block adds one nginx site, `scrappia`. It installs nginx only if missing, te
 
 ```bash
 sudo bash -euo pipefail <<'EOF'
+export DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1   # additive only: needrestart must not restart other services
 source /etc/scrappia/deploy.conf
 WEB=$(ss -ltnpH '( sport = :80 or sport = :443 )' | grep -oE 'users:\(\("[^"]+"' | cut -d'"' -f2 | sort -u | tr '\n' ' ')
 case "$WEB" in ""|"nginx ") ;; *) echo "STOP: ports 80/443 belong to: $WEB. Use the Appendix instead of nginx."; exit 1 ;; esac
@@ -591,6 +594,7 @@ If your cloud provider has its own firewall (security groups), open TCP 80 and 4
 
 ```bash
 sudo bash -euo pipefail <<'EOF'
+export DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1   # additive only: needrestart must not restart other services
 source /etc/scrappia/deploy.conf
 [ -n "$DOMAIN" ] || { echo "No DOMAIN set: no-domain mode, skip this step."; exit 0; }
 [ -n "$EMAIL" ] || { echo "STOP: set EMAIL in /etc/scrappia/deploy.conf"; exit 1; }
@@ -914,6 +918,6 @@ Then enable it and get the certificate. `a2enmod` makes no change if a module is
 sudo a2enmod proxy proxy_http headers
 sudo a2ensite scrappia
 sudo apache2ctl configtest && sudo systemctl reload apache2
-sudo apt-get install -y --no-install-recommends certbot python3-certbot-apache
+sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 apt-get install -y --no-install-recommends certbot python3-certbot-apache
 sudo certbot --apache -d scrape.example.com --non-interactive --agree-tos -m you@example.com --redirect
 ```
