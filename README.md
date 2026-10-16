@@ -142,3 +142,11 @@ once at the root and `scripts/link-packages.mjs` links or stubs the local packag
 ## License
 
 Apache-2.0
+
+---
+
+## ⭐ Support
+
+Please give stars and if possible Buy me a coffee (USDT-TRC20) - `TA216k3WgWTrKnUKxZrSDNGzSJj3eHtEcH`
+
+Telegram: [@Cyberkyd](https://t.me/Cyberkyd)
