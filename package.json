@@ -28,7 +28,7 @@
     "@types/papaparse": "^5.3.16",
     "@types/turndown": "^5.0.5",
     "@types/pg": "^8.15.0",
-    "electron": "^44.0.0",
+    "electron": "^44.9.1",
     "electron-vite": "^5.0.0",
     "electron-builder": "^26.0.0",
     "@vitejs/plugin-react": "^5.0.0",
