@@ -52,7 +52,7 @@
     "robots-parser": "^3.0.1",
     "proxy-chain": "^3.0.0",
     "microdiff": "^1.6.0",
-    "undici": "^8.10.0",
+    "undici": "^8.12.3",
     "nanoid": "^6.0.0",
     "@medv/finder": "^4.0.0",
     "css-selector-generator": "^3.9.0",
