@@ -40,7 +40,7 @@
     "typescript-eslint": "^8.35.0"
   },
   "dependencies": {
-    "zod": "^3.25.0",
+    "zod": "^4.6.7",
     "patchright": "^1.63.0",
     "jsdom": "^30.0.0",
     "croner": "^10.0.0",
